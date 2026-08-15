@@ -9,3 +9,4 @@ checkpoints/
 .pytest_cache/
 .DS_Store
 logs/
+reports/

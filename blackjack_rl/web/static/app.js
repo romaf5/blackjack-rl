@@ -346,6 +346,11 @@ $("#btn-step").onclick = async () => { stopAuto(); try { await agentStep(); } ca
 $("#toggle-count").onchange = (e) => { showCount = e.target.checked; $("#count-body").classList.toggle("hidden", !showCount); };
 $("#toggle-advice").onchange = (e) => { showAdvice = e.target.checked; $("#advice-body").classList.toggle("hidden", !showAdvice); render(); };
 $("#btn-settings").onclick = () => $("#modal").classList.remove("hidden");
+$("#btn-report").onclick = () => {
+  const agent = $("#agent-select").value;
+  const tc = state && state.count ? state.count.true : 0;
+  window.open(`/report?agent=${encodeURIComponent(agent)}&tc=${encodeURIComponent(tc.toFixed(1))}`, "_blank");
+};
 $("#btn-cancel").onclick = () => $("#modal").classList.add("hidden");
 $("#modal").onclick = (e) => { if (e.target.id === "modal") $("#modal").classList.add("hidden"); };
 $("#settings-form").onsubmit = async (e) => {

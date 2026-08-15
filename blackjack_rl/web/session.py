@@ -154,6 +154,19 @@ class GameSession:
                           "q": entries}
         return out
 
+    # ------------------------------------------------------------------ strategy report
+    def strategy_report_html(self, agent: str = "dqn", true_count: float = 0.0) -> str:
+        from ..cli.strategy import build_report, render_html
+        if agent not in ("basic", "hilo", "dqn"):
+            raise ValueError(f"unknown agent {agent}")
+        if agent == "dqn" and not self.dqn_usable:
+            raise ValueError(self.dqn_error or "no DQN checkpoint loaded")
+        a = self.dqn if agent == "dqn" else (self.hilo if agent == "hilo" else self.basic)
+        shoe = self.env.game.shoe
+        rep = build_report(agent, a, self.env, true_count, shoe.cards_remaining / shoe.total_cards,
+                           self.checkpoint if agent == "dqn" else None)
+        return render_html(rep)
+
     # ------------------------------------------------------------------ state
     def phase_name(self) -> str:
         if self.round_over:

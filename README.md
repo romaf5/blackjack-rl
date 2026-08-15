@@ -105,7 +105,15 @@ over 1M rounds**, matching the published house edge for 6D / S17 / DAS / LS.
 blackjack-train --rounds 400000 --out checkpoints/dqn.pt
 blackjack-eval --agent dqn --checkpoint checkpoints/dqn.pt --rounds 200000
 blackjack-strategy --agent dqn --checkpoint checkpoints/dqn.pt     # learned tables vs basic strategy + bet spread
+blackjack-strategy --agent dqn --checkpoint checkpoints/dqn.pt --html reports/dqn.html --open
 ```
+
+`--html PATH` (or `--open`) writes a self-contained, light/dark-aware **HTML report**: colour-coded
+hard/soft/pairs charts with every disagreement vs basic strategy outlined (hover a cell for the
+Q-values), agreement tiles, the bet spread by true count against the Hi-Lo reference, and the
+Q-value table per bet size. The same report is one click away in the browser game (📊 Strategy).
+
+![Strategy report](docs/screenshot-strategy.png)
 
 The agent is a masked **Double DQN** (`agents/dqn.py`): one MLP outputs Q-values for all 5 play
 actions + all bet sizes; the mask picks which are valid in the current phase. Rewards are scaled by

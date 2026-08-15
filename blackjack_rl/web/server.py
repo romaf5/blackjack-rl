@@ -9,7 +9,7 @@ import threading
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from ..engine import Rules
 from ..cli.common import add_rules_args, bets_from_args, rules_from_args
@@ -78,10 +78,32 @@ def make_handler(session: GameSession):
             return json.loads(self.rfile.read(n) or b"{}")
 
         # ---------------------------------------------------------- routes
+        def _html(self, text: str, status: int = 200) -> None:
+            body = text.encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.end_headers()
+            self.wfile.write(body)
+
         def do_GET(self):
-            path = urlparse(self.path).path
+            url = urlparse(self.path)
+            path = url.path
             if path in ("/", "/index.html"):
                 return self._static("index.html")
+            if path == "/report":
+                q = parse_qs(url.query)
+                agent = (q.get("agent") or ["dqn"])[0]
+                try:
+                    tc = float((q.get("tc") or ["0"])[0])
+                except ValueError:
+                    tc = 0.0
+                with session.lock:
+                    try:
+                        return self._html(session.strategy_report_html(agent, tc))
+                    except ValueError as e:
+                        return self._html(f"<p style='font-family:sans-serif'>{e}</p>", status=400)
             if path.startswith("/static/"):
                 return self._static(path[len("/static/"):])
             with session.lock:

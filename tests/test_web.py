@@ -90,3 +90,11 @@ def test_http_api_end_to_end():
     finally:
         httpd.shutdown()
         httpd.server_close()
+
+
+def test_strategy_report_html_from_session():
+    s = GameSession(rules=Rules(), bet_sizes=(1, 2, 4, 8), bankroll=100, seed=4)
+    page = s.strategy_report_html("hilo", 2.0)
+    assert page.startswith("<!doctype html>") and "Hard totals" in page and "Bet size by true count" in page
+    with pytest.raises(ValueError):
+        s.strategy_report_html("dqn")
