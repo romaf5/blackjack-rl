@@ -115,10 +115,19 @@ the bet spread — takes millions of rounds; `--rounds`, `--lr`, `--batch-size`,
 `--eps-decay-frac` and `--resume` are the knobs. `--bets 1` trains a flat-betting player if you only
 care about the playing decisions.
 
-Reference point: a first 400k-round run (≈10 min on an M2 Max CPU; the network is far too small for a
-GPU to help — `--device mps` is slower) reaches −4.6 % of wager with ~63 % agreement with basic
-strategy on hard totals and no usable bet spread yet, i.e. clearly under-trained. Longer runs with
-bigger batches (`--rounds 3000000 --batch-size 1024 --train-every 8`) are the next step.
+Reference points (6D S17 DAS LS, bets 1/2/4/8, M2 Max CPU — the network is far too small for a
+GPU to help, `--device mps` is slower):
+
+| run | wall time | EV / unit wagered | agreement with basic strategy (hard / soft / pairs) | bet spread |
+|---|---|---|---|---|
+| basic strategy + Hi-Lo (benchmark) | – | ≈ −0.3 % … +0.3 % | 100 % | 1 → 8 |
+| DQN, 400k rounds, batch 256 | 10 min | −4.6 % | 63 / 54 / 55 % | none |
+| DQN, 3M rounds, batch 1024, `--train-every 8` | 36 min | **−1.2 %** | **79 / 65 / 62 %** | partial: ~2 units at TC ≤ −4, 4 units around 0, 8 units at TC ≥ +6 |
+
+So the agent is clearly learning (it hits/stands correctly on almost every hard total and has started
+to size bets with the count) but is still short of basic strategy on doubles, soft hands and pairs —
+the rarest states with the smallest EV differences. More rounds, `--resume` from the last checkpoint,
+and a lower final learning rate are the obvious next levers.
 
 ## Ideas / next steps
 
