@@ -101,8 +101,13 @@ over 1M rounds**, matching the published house edge for 6D / S17 / DAS / LS.
 
 ## Basic strategy reference
 
-`blackjack-strategy --agent basic` prints (and, with `--open`, renders) the chart the agents are
-measured against — here for the default table (6 decks, S17, DAS, late surrender):
+The chart the agents are measured against — default table (6 decks, S17, DAS, late surrender),
+as rendered by `blackjack-strategy --agent basic --open`:
+
+![Basic strategy chart: hard totals, soft totals and pairs vs dealer up-card](docs/screenshot-basic-strategy.png)
+
+<details>
+<summary>Same chart as text (<code>blackjack-strategy --agent basic</code>)</summary>
 
 ```
 Legend: S=stand H=hit D=double P=split R=surrender   (2-card hands; dealer up-card across the top)
@@ -147,11 +152,11 @@ T,T            S   S   S   S   S   S   S   S   S   S
 A,A            P   P   P   P   P   P   P   P   P   P
 ```
 
+</details>
+
 `D` falls back to hit (hard 9–11, soft ≤ 17) or stand (soft 18) when doubling isn't allowed, `R` falls
 back to hit — the same fallback logic `BasicStrategyAgent` uses. `--h17`, `--no-das`, `--no-surrender`,
 `--decks N` etc. regenerate the chart for other tables; `--agent hilo` adds the Hi-Lo bet spread.
-
-![Basic strategy report](docs/screenshot-basic-strategy.png)
 
 ## Train the DQN
 
