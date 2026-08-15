@@ -8,9 +8,13 @@ let seenCards = new Set();
 let auto = { on: false, timer: null };
 let showCount = true;
 let showAdvice = true;
+const DEAL_STAGGER = 260;   // ms between consecutive dealt cards
+const DEAL_DURATION = 520;  // ms for one card to land (keep in sync with style.css)
+let renderToken = 0;
 
 // ---------------------------------------------------------------- api
 async function api(path, body) {
+  // GET when no body is given; POST (JSON) otherwise. Pass {} to POST without arguments.
   const opts = body === undefined ? {} :
     { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body || {}) };
   const res = await fetch(path, opts);
@@ -54,18 +58,37 @@ function cardEl(c, key, isNew, flip) {
   return el;
 }
 
-function renderCards(container, cards, prefix, newKeys) {
+function renderCards(container, cards, prefix, newKeys, newCards) {
   container.innerHTML = "";
-  let newIdx = 0;
   cards.forEach((c, i) => {
     const key = `${prefix}:${i}:${c.hidden ? "X" : c.rank + c.suit}`;
     const isNew = !seenCards.has(key);
     const wasHidden = seenCards.has(`${prefix}:${i}:X`) && !c.hidden;
     const el = cardEl(c, key, isNew, wasHidden);
-    if (isNew && !wasHidden) { el.style.animationDelay = (newIdx++ * 90) + "ms"; }
+    if (isNew) newCards.push({ el, prefix, idx: i, flip: wasHidden });
     container.appendChild(el);
     newKeys.push(key);
   });
+}
+
+// Assign animation delays so cards land one after another, in casino dealing order
+// (player, dealer up-card, player, dealer hole card; everything else in the order it appears).
+// Returns the total time until the last card has landed.
+function scheduleDeals(newCards) {
+  const initial = { "p0:0": 0, "d:0": 1, "p0:1": 2, "d:1": 3 };
+  const ordered = newCards.slice().sort((a, b) => {
+    const ka = initial[`${a.prefix}:${a.idx}`], kb = initial[`${b.prefix}:${b.idx}`];
+    if (ka !== undefined && kb !== undefined) return ka - kb;
+    if (ka !== undefined) return -1;
+    if (kb !== undefined) return 1;
+    return 0;
+  });
+  let t = 0;
+  ordered.forEach((c) => {
+    c.el.style.animationDelay = t + "ms";
+    t += c.flip ? DEAL_STAGGER + 200 : DEAL_STAGGER;
+  });
+  return ordered.length ? t - DEAL_STAGGER + DEAL_DURATION : 0;
 }
 
 function chipClass(i) { return "c" + Math.min(i, 6); }
@@ -74,6 +97,8 @@ function render() {
   const s = state;
   if (!s) return;
   const newKeys = [];
+  const newCards = [];
+  const token = ++renderToken;
   if (s.phase === "bet") seenCards.clear();
 
   // header
@@ -91,10 +116,10 @@ function render() {
   // dealer
   const dt = $("#dealer-total");
   if (s.dealer) {
-    renderCards($("#dealer-cards"), s.dealer.cards, "d", newKeys);
+    renderCards($("#dealer-cards"), s.dealer.cards, "d", newKeys, newCards);
     if (s.dealer.total != null) {
       dt.textContent = (s.dealer.blackjack ? "Blackjack" : (s.dealer.soft ? "soft " : "") + s.dealer.total) + (s.dealer.bust ? " · bust" : "");
-      dt.className = "total-badge" + (s.dealer.bust ? " bust" : s.dealer.blackjack ? " bj" : "");
+      dt.className = "total-badge reveal" + (s.dealer.bust ? " bust" : s.dealer.blackjack ? " bj" : "");
     } else {
       dt.className = "total-badge hidden";
     }
@@ -117,7 +142,7 @@ function render() {
     }
     const cards = document.createElement("div");
     cards.className = "cards";
-    renderCards(cards, h.cards, "p" + i, newKeys);
+    renderCards(cards, h.cards, "p" + i, newKeys, newCards);
     el.appendChild(cards);
     const meta = document.createElement("div");
     meta.className = "meta";
@@ -178,9 +203,14 @@ function render() {
     else { main.textContent = "PUSH"; main.className = "banner-main push"; }
     const sub = s.last.results.map((r, i) => (s.last.results.length > 1 ? `hand ${i + 1}: ` : "") + `${r.label} (${fmt(r.profit, true)})`).join("  ·  ");
     $("#banner-sub").textContent = sub + (s.last.shuffled ? "  ·  (shoe was shuffled before this round)" : "");
-    banner.classList.remove("hidden");
+    banner.classList.add("hidden");
+    const wait = scheduleDeals(newCards) + 150;
+    setTimeout(() => { if (token === renderToken && state.phase === "done") banner.classList.remove("hidden"); }, wait);
+    document.body.style.setProperty("--reveal-delay", wait + "ms");
   } else {
     banner.classList.add("hidden");
+    scheduleDeals(newCards);
+    document.body.style.setProperty("--reveal-delay", "0ms");
   }
 
   // count panel
@@ -267,7 +297,7 @@ async function userAct(a) {
   try { await refresh(await api("/api/action", { action: a })); } catch (e) { toast(e.message); }
 }
 async function nextRound() {
-  try { await refresh(await api("/api/next")); } catch (e) { toast(e.message); }
+  try { await refresh(await api("/api/next", {})); } catch (e) { toast(e.message); }
 }
 
 // ---------------------------------------------------------------- autoplay
