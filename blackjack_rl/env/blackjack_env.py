@@ -65,6 +65,7 @@ class BlackjackEnv(gym.Env):
         self.current_bet = 0.0
         self.total_profit = 0.0
         self.rounds_played = 0
+        self._awaiting_bet = True
 
     # ------------------------------------------------------------------ helpers
     @property
@@ -164,6 +165,7 @@ class BlackjackEnv(gym.Env):
             self.game.shoe.shuffle()
         self.phase = Phase.BET
         self.current_bet = 0.0
+        self._awaiting_bet = True
         return self._obs(), self._info()
 
     def step(self, action: int):
@@ -175,6 +177,7 @@ class BlackjackEnv(gym.Env):
             )
         if self.phase == Phase.BET:
             self.current_bet = self.bet_sizes[action - N_PLAY_ACTIONS]
+            self._awaiting_bet = False
             over = self.game.start_round(self.current_bet)
             if not over:
                 self.phase = Phase.PLAY
@@ -192,9 +195,13 @@ class BlackjackEnv(gym.Env):
         return self._obs(), 0.0, False, False, self._info()
 
     def render(self):
-        text = self.game.render()
-        if self.phase == Phase.BET and not self.game.round_active:
-            text = "--- new round: place your bet ---\n" + text
+        if self._awaiting_bet:
+            shoe = self.game.shoe
+            text = (f"--- new round: place your bet ---\n"
+                    f"Count: running {shoe.running_count:+d}, true {shoe.true_count:+.1f}  "
+                    f"({shoe.decks_remaining:.1f} decks left, {shoe.cards_dealt}/{shoe.total_cards} dealt)")
+        else:
+            text = self.game.render()
         if self.render_mode == "human":
             print(text)
             return None
