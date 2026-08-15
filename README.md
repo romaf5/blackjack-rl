@@ -99,6 +99,60 @@ blackjack-strategy --agent basic                     # print the basic-strategy 
 Sanity check: with the default rules basic strategy measures **−0.40 % ± 0.22 % of the initial bet
 over 1M rounds**, matching the published house edge for 6D / S17 / DAS / LS.
 
+## Basic strategy reference
+
+`blackjack-strategy --agent basic` prints (and, with `--open`, renders) the chart the agents are
+measured against — here for the default table (6 decks, S17, DAS, late surrender):
+
+```
+Legend: S=stand H=hit D=double P=split R=surrender   (2-card hands; dealer up-card across the top)
+
+HARD          2   3   4   5   6   7   8   9   T   A
+5              H   H   H   H   H   H   H   H   H   H
+6              H   H   H   H   H   H   H   H   H   H
+7              H   H   H   H   H   H   H   H   H   H
+8              H   H   H   H   H   H   H   H   H   H
+9              H   D   D   D   D   H   H   H   H   H
+10             D   D   D   D   D   D   D   D   H   H
+11             D   D   D   D   D   D   D   D   D   H
+12             H   H   S   S   S   H   H   H   H   H
+13             S   S   S   S   S   H   H   H   H   H
+14             S   S   S   S   S   H   H   H   H   H
+15             S   S   S   S   S   H   H   H   R   H
+16             S   S   S   S   S   H   H   R   R   R
+17             S   S   S   S   S   S   S   S   S   S
+18             S   S   S   S   S   S   S   S   S   S
+19             S   S   S   S   S   S   S   S   S   S
+
+SOFT          2   3   4   5   6   7   8   9   T   A
+A,2            H   H   H   D   D   H   H   H   H   H
+A,3            H   H   H   D   D   H   H   H   H   H
+A,4            H   H   D   D   D   H   H   H   H   H
+A,5            H   H   D   D   D   H   H   H   H   H
+A,6            H   D   D   D   D   H   H   H   H   H
+A,7            S   D   D   D   D   S   S   H   H   H
+A,8            S   S   S   S   S   S   S   S   S   S
+A,9            S   S   S   S   S   S   S   S   S   S
+
+PAIRS         2   3   4   5   6   7   8   9   T   A
+2,2            P   P   P   P   P   P   H   H   H   H
+3,3            P   P   P   P   P   P   H   H   H   H
+4,4            H   H   H   P   P   H   H   H   H   H
+5,5            D   D   D   D   D   D   D   D   H   H
+6,6            P   P   P   P   P   H   H   H   H   H
+7,7            P   P   P   P   P   P   H   H   H   H
+8,8            P   P   P   P   P   P   P   P   P   P
+9,9            P   P   P   P   P   S   P   P   S   S
+T,T            S   S   S   S   S   S   S   S   S   S
+A,A            P   P   P   P   P   P   P   P   P   P
+```
+
+`D` falls back to hit (hard 9–11, soft ≤ 17) or stand (soft 18) when doubling isn't allowed, `R` falls
+back to hit — the same fallback logic `BasicStrategyAgent` uses. `--h17`, `--no-das`, `--no-surrender`,
+`--decks N` etc. regenerate the chart for other tables; `--agent hilo` adds the Hi-Lo bet spread.
+
+![Basic strategy report](docs/screenshot-basic-strategy.png)
+
 ## Train the DQN
 
 ```bash
