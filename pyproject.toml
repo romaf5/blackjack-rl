@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "blackjack-rl"
+version = "0.1.0"
+description = "Full-rules blackjack engine, Gymnasium environment with bet sizing + card counting, and RL agents"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+dependencies = [
+    "numpy>=1.24",
+    "gymnasium>=0.29",
+    "torch>=2.0",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7"]
+
+[project.scripts]
+blackjack-play = "blackjack_rl.cli.play:main"
+blackjack-train = "blackjack_rl.cli.train:main"
+blackjack-eval = "blackjack_rl.cli.evaluate:main"
+blackjack-strategy = "blackjack_rl.cli.strategy:main"
+
+[tool.setuptools.packages.find]
+include = ["blackjack_rl*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
