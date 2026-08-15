@@ -1,8 +1,17 @@
 # blackjack-rl
 
 A full-rules blackjack engine, a Gymnasium environment with **bet sizing and card counting**,
-and RL agents that learn to play (and bet) — plus a terminal game so you can play the exact
-same environment yourself.
+and RL agents that learn to play (and bet) — plus a browser (and terminal) game so you can play
+the exact same environment yourself.
+
+![Blackjack RL web UI — split hand mid-decision with the advisor panel](docs/screenshot-play.png)
+
+<details>
+<summary>More screenshots</summary>
+
+![A natural — result banner and per-hand result tags](docs/screenshot-result.png)
+
+</details>
 
 ```
 blackjack_rl/
