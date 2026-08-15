@@ -23,9 +23,13 @@ blackjack-play = "blackjack_rl.cli.play:main"
 blackjack-train = "blackjack_rl.cli.train:main"
 blackjack-eval = "blackjack_rl.cli.evaluate:main"
 blackjack-strategy = "blackjack_rl.cli.strategy:main"
+blackjack-web = "blackjack_rl.web.server:main"
 
 [tool.setuptools.packages.find]
 include = ["blackjack_rl*"]
+
+[tool.setuptools.package-data]
+blackjack_rl = ["web/static/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

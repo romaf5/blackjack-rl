@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Blackjack RL</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="logo">♠</span>
+    <div>
+      <h1>Blackjack <span class="accent">RL</span></h1>
+      <div id="rules" class="rules">…</div>
+    </div>
+  </div>
+  <div class="topstats">
+    <div class="stat"><span class="label">Bankroll</span><span id="bankroll" class="value">–</span></div>
+    <div class="stat"><span class="label">Net</span><span id="net" class="value">–</span></div>
+    <div class="stat"><span class="label">Rounds</span><span id="rounds" class="value">0</span></div>
+    <button id="btn-settings" class="ghost" title="Table settings">⚙ Table</button>
+  </div>
+</header>
+
+<main class="layout">
+  <section class="table-wrap">
+    <div class="table" id="table">
+      <div class="area dealer">
+        <div class="area-title">Dealer <span id="dealer-total" class="total-badge hidden"></span></div>
+        <div id="dealer-cards" class="cards"></div>
+      </div>
+
+      <div id="banner" class="banner hidden">
+        <div id="banner-main" class="banner-main"></div>
+        <div id="banner-sub" class="banner-sub"></div>
+        <button id="btn-next" class="primary big">Deal next round <kbd>Enter</kbd></button>
+      </div>
+
+      <div class="area player">
+        <div id="hands" class="hands"></div>
+        <div id="bet-prompt" class="bet-prompt hidden">
+          <div class="area-title">Place your bet</div>
+          <div id="chips" class="chips"></div>
+          <div class="hintline" id="bet-hint"></div>
+        </div>
+      </div>
+
+      <div id="actions" class="actions hidden">
+        <button data-action="stand" class="act">Stand <kbd>S</kbd></button>
+        <button data-action="hit" class="act">Hit <kbd>H</kbd></button>
+        <button data-action="double" class="act">Double <kbd>D</kbd></button>
+        <button data-action="split" class="act">Split <kbd>P</kbd></button>
+        <button data-action="surrender" class="act">Surrender <kbd>R</kbd></button>
+      </div>
+      <div id="agent-flash" class="agent-flash hidden"></div>
+    </div>
+  </section>
+
+  <aside class="side">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Shoe &amp; count</h2>
+        <label class="switch"><input type="checkbox" id="toggle-count" checked><span>show</span></label>
+      </div>
+      <div id="count-body" class="panel-body">
+        <div class="kv"><span>Running count</span><b id="rc">0</b></div>
+        <div class="kv"><span>True count</span><b id="tc">0.0</b></div>
+        <div class="kv"><span>Decks left</span><b id="decks">6.0</b></div>
+        <div class="shoe-bar"><div id="shoe-fill" class="fill"></div><div id="cut-mark" class="cut"></div></div>
+        <div class="muted small" id="shoe-text"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Advisor</h2>
+        <label class="switch"><input type="checkbox" id="toggle-advice" checked><span>show</span></label>
+      </div>
+      <div id="advice-body" class="panel-body">
+        <div class="kv"><span>Basic strategy</span><b id="adv-basic">–</b></div>
+        <div class="kv"><span>Hi-Lo bet</span><b id="adv-hilo">–</b></div>
+        <div class="kv"><span>DQN agent</span><b id="adv-dqn">–</b></div>
+        <div id="qbars" class="qbars"></div>
+        <div id="dqn-note" class="muted small"></div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Autoplay</h2></div>
+      <div class="panel-body">
+        <div class="row">
+          <select id="agent-select">
+            <option value="basic">Basic strategy (flat bet)</option>
+            <option value="hilo">Basic + Hi-Lo betting</option>
+            <option value="dqn">DQN agent</option>
+          </select>
+          <button id="btn-auto" class="primary">▶ Start</button>
+        </div>
+        <div class="row">
+          <label class="small muted" for="speed">speed</label>
+          <input type="range" id="speed" min="0" max="1500" step="50" value="700">
+          <button id="btn-step" class="ghost" title="Let the selected agent make one decision">step</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-head"><h2>Session</h2></div>
+      <div class="panel-body">
+        <canvas id="spark" width="280" height="70"></canvas>
+        <div class="kv small"><span>W / L / P</span><b id="wlp">0 / 0 / 0</b></div>
+        <div class="kv small"><span>Win rate</span><b id="winrate">–</b></div>
+        <div class="kv small"><span>Shuffles</span><b id="shuffles">0</b></div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<div id="modal" class="modal hidden">
+  <div class="modal-card">
+    <h2>New table</h2>
+    <form id="settings-form">
+      <div class="grid">
+        <label>Decks <input name="num_decks" type="number" min="1" max="8" value="6"></label>
+        <label>Penetration <input name="penetration" type="number" min="0.3" max="1" step="0.05" value="0.75"></label>
+        <label>Blackjack pays <input name="blackjack_payout" type="number" step="0.1" value="1.5"></label>
+        <label>Max splits <input name="max_splits" type="number" min="0" max="3" value="3"></label>
+        <label>Bet sizes <input name="bet_sizes" type="text" value="1,2,4,8"></label>
+        <label>Bankroll <input name="bankroll" type="number" value="100"></label>
+        <label>Seed (optional) <input name="seed" type="text" value=""></label>
+        <label>Double only on <input name="double_on" type="text" placeholder="any (or 9,10,11)"></label>
+      </div>
+      <div class="checks">
+        <label><input type="checkbox" name="dealer_hits_soft_17"> Dealer hits soft 17</label>
+        <label><input type="checkbox" name="double_after_split" checked> Double after split</label>
+        <label><input type="checkbox" name="surrender" checked> Late surrender</label>
+        <label><input type="checkbox" name="dealer_peeks" checked> Dealer peeks</label>
+        <label><input type="checkbox" name="resplit_aces"> Re-split aces</label>
+        <label><input type="checkbox" name="hit_split_aces"> Hit split aces</label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" id="btn-cancel" class="ghost">Cancel</button>
+        <button type="submit" class="primary">Start new table</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<div id="toast" class="toast hidden"></div>
+<script src="/static/app.js"></script>
+</body>
+</html>
