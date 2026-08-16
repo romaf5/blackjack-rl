@@ -61,3 +61,6 @@ def test_ppo_smoke_train_and_roundtrip(tmp_path):
     assert abs(sum(e["prob"] for e in adv["rl_agents"]["ppo"]["probs"]) - 1) < 1e-5
     st2 = s.agent_step("ppo")
     assert st2["agent_action"].startswith("bet")
+    for name in ("ppo", "rl"):
+        page = s.strategy_report_html(name, 1.5)
+        assert "PPO agent" in page and "Bet size by true count" in page

@@ -225,7 +225,7 @@ class GameSession:
             rep = build_report(agent, a, self.env, true_count, decks_frac, None)
         else:
             sl = self.slot(agent)
-            rep = build_report("rl", sl.agent, self.env, true_count, decks_frac, sl.checkpoint)
+            rep = build_report("ppo", sl.agent, self.env, true_count, decks_frac, sl.checkpoint)
         return render_html(rep)
 
     # ------------------------------------------------------------------ state

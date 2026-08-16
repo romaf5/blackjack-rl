@@ -90,7 +90,9 @@ def build_report(agent_kind: str, agent, env, true_count: float, decks_frac: flo
     rules = env.rules
     n_actions = env.action_space.n
     bet_frac = env.bet_sizes[0] / env.max_bet
-    is_rl = agent_kind == "ppo"
+    is_rl = agent_kind not in ("basic", "hilo")
+    if is_rl:
+        agent_kind = getattr(agent, "name", "ppo")   # accept aliases like "rl"
 
     def decide(total, is_soft, is_pair, dealer, legal) -> Tuple[Action, Optional[Dict[str, float]]]:
         if is_rl:
@@ -296,7 +298,7 @@ def _bet_svg(rep: StrategyReport) -> str:
     parts.append(f'<line class="axis" x1="{left}" x2="{W - right}" y1="{top + ph}" y2="{top + ph}"/>')
     for i, tc in enumerate(TC_RANGE):
         cx = left + gw * (i + 0.5)
-        series = [("bar-agent", rep.agent_bets[i], rep.agent_name if two else {"hilo": "Hi-Lo", "basic": "flat"}[rep.agent_name])]
+        series = [("bar-agent", rep.agent_bets[i], rep.agent_name if two else {"hilo": "Hi-Lo", "basic": "flat"}.get(rep.agent_name, rep.agent_name))]
         if two:
             series.append(("bar-ref", rep.hilo_bets[i], "Hi-Lo reference"))
         x0 = cx - (bw * len(series) + 2 * (len(series) - 1)) / 2

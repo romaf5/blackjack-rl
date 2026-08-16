@@ -7,6 +7,7 @@ import mimetypes
 import os
 import threading
 import webbrowser
+from html import escape as html_escape
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Dict
 from urllib.parse import parse_qs, urlparse
@@ -103,7 +104,11 @@ def make_handler(session: GameSession):
                     try:
                         return self._html(session.strategy_report_html(agent, tc))
                     except ValueError as e:
-                        return self._html(f"<p style='font-family:sans-serif'>{e}</p>", status=400)
+                        return self._html(f"<p style='font-family:sans-serif'>{html_escape(str(e))}</p>", status=400)
+                    except Exception as e:  # never drop the connection on a bug: show it
+                        import traceback
+                        traceback.print_exc()
+                        return self._html(f"<pre style='font-family:monospace'>report failed: {html_escape(str(e))}</pre>", status=500)
             if path.startswith("/static/"):
                 return self._static(path[len("/static/"):])
             with session.lock:
