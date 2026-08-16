@@ -37,20 +37,28 @@ def test_no_peek_player_loses_doubled_bet(scripted):
     assert g.round_profit == -2
 
 
-def test_dealer_stands_soft_17_by_default(scripted):
-    g = BlackjackGame(shoe=scripted([10, 1, 8, 6]))  # dealer A,6 = soft 17
+def test_dealer_hits_soft_17_by_default(scripted):
+    g = BlackjackGame(shoe=scripted([10, 1, 8, 6, 3]))  # dealer A,6 = soft 17 -> hits, draws 3 -> 20
+    g.start_round(1)
+    play(g, Action.STAND)
+    assert g.dealer_hand.total == 20 and len(g.dealer_hand.cards) == 3
+    assert g.round_profit == -1
+
+
+def test_dealer_stands_soft_17_with_s17(scripted):
+    g = BlackjackGame(rules=Rules(dealer_hits_soft_17=False), shoe=scripted([10, 1, 8, 6]))
     g.start_round(1)
     play(g, Action.STAND)
     assert g.dealer_hand.total == 17 and len(g.dealer_hand.cards) == 2
     assert g.round_profit == 1  # 18 beats 17
 
 
-def test_dealer_hits_soft_17_with_h17(scripted):
-    g = BlackjackGame(rules=Rules(dealer_hits_soft_17=True), shoe=scripted([10, 1, 8, 6, 3]))
+def test_dealer_stands_on_hard_17_under_h17(scripted):
+    g = BlackjackGame(shoe=scripted([10, 10, 8, 7]))  # dealer T,7 = hard 17 -> stands
     g.start_round(1)
     play(g, Action.STAND)
-    assert g.dealer_hand.total == 20 and len(g.dealer_hand.cards) == 3
-    assert g.round_profit == -1
+    assert g.dealer_hand.total == 17 and len(g.dealer_hand.cards) == 2
+    assert g.round_profit == 1
 
 
 def test_dealer_hits_16_and_busts(scripted):

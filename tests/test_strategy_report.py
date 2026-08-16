@@ -11,6 +11,7 @@ def test_build_report_basic_and_hilo_match_basic_strategy():
     assert rep.agreement(rep.hard) == (150, 150)
     assert rep.agreement(rep.soft) == (80, 80) and rep.agreement(rep.pairs) == (100, 100)
     assert rep.hard[(16, 10)].action == "R" and rep.pairs[(8, 10)].action == "P" and rep.soft[(18, 3)].action == "D"
+    assert rep.hard[(11, 1)].action == "D" and rep.pairs[(8, 1)].action == "R"   # H17-specific cells
     assert rep.agent_bets == [1.0] * len(TC_RANGE)
     hilo = build_report("hilo", BasicStrategyAgent(env.rules, count_bets=True), env, 0.0, 0.6, None)
     assert hilo.agent_bets == hilo.hilo_bets and hilo.hilo_bets[-1] == 8.0 and hilo.hilo_bets[0] == 1.0

@@ -1,8 +1,8 @@
 """Basic strategy (multi-deck) + optional Hi-Lo bet spread.
 
 This is the benchmark the RL agent should converge towards. Basic strategy alone
-plays at roughly -0.4% .. -0.6% of the wager per round on 6D S17 DAS LS; adding a
-count-driven bet spread flips the edge slightly positive.
+plays at roughly -0.6% of the wager per round on 6D H17 DAS LS (-0.4% with S17);
+adding a count-driven bet spread flips the edge slightly positive.
 """
 from __future__ import annotations
 

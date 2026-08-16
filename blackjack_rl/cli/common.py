@@ -12,7 +12,8 @@ def add_rules_args(p: argparse.ArgumentParser) -> None:
     g = p.add_argument_group("table rules")
     g.add_argument("--decks", type=int, default=6)
     g.add_argument("--penetration", type=float, default=0.75, help="fraction of shoe dealt before reshuffle")
-    g.add_argument("--h17", action="store_true", help="dealer hits soft 17 (default: stands)")
+    g.add_argument("--s17", action="store_true", help="dealer stands on soft 17 (default: hits soft 17, H17)")
+    g.add_argument("--h17", action="store_true", help=argparse.SUPPRESS)  # legacy no-op: H17 is the default
     g.add_argument("--bj-payout", type=float, default=1.5)
     g.add_argument("--no-das", action="store_true", help="no doubling after split")
     g.add_argument("--double-on", type=str, default=None, help="e.g. 9,10,11 to restrict doubling (default: any)")
@@ -29,7 +30,7 @@ def rules_from_args(a: argparse.Namespace) -> Rules:
     return Rules(
         num_decks=a.decks,
         penetration=a.penetration,
-        dealer_hits_soft_17=a.h17,
+        dealer_hits_soft_17=not a.s17,
         blackjack_payout=a.bj_payout,
         dealer_peeks=not a.no_peek,
         double_after_split=not a.no_das,

@@ -9,7 +9,7 @@ from typing import Optional, Tuple
 class Rules:
     num_decks: int = 6
     penetration: float = 0.75          # fraction of the shoe dealt before a reshuffle
-    dealer_hits_soft_17: bool = False   # False = S17 (dealer stands on all 17s)
+    dealer_hits_soft_17: bool = True    # H17 (the usual US rule); False = S17, dealer stands on all 17s
     blackjack_payout: float = 1.5       # 3:2. Use 1.2 for the (bad) 6:5 tables.
     dealer_peeks: bool = True           # dealer checks for blackjack before the player acts
     double_after_split: bool = True     # DAS
@@ -43,6 +43,6 @@ class Rules:
 
 
 # A few common presets
-VEGAS_STRIP = Rules(num_decks=6, dealer_hits_soft_17=False, double_after_split=True, surrender=True)
-VEGAS_DOWNTOWN = Rules(num_decks=6, dealer_hits_soft_17=True, double_after_split=True, surrender=True)
+VEGAS_STRIP = Rules(num_decks=6, dealer_hits_soft_17=False, double_after_split=True, surrender=True)   # S17 (high-limit style)
+VEGAS_DOWNTOWN = Rules(num_decks=6, dealer_hits_soft_17=True, double_after_split=True, surrender=True)  # H17 (= defaults)
 SINGLE_DECK = Rules(num_decks=1, penetration=0.6, dealer_hits_soft_17=True, double_on=(9, 10, 11), surrender=False)

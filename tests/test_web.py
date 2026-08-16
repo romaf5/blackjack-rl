@@ -45,8 +45,8 @@ def test_agent_step_plays_whole_rounds():
 
 
 def test_rules_from_json():
-    r = rules_from_json({"num_decks": 2, "dealer_hits_soft_17": True, "double_on": "9,10,11", "surrender": False})
-    assert r.num_decks == 2 and r.dealer_hits_soft_17 and r.double_on == (9, 10, 11) and not r.surrender
+    r = rules_from_json({"num_decks": 2, "dealer_hits_soft_17": False, "double_on": "9,10,11", "surrender": False})
+    assert r.num_decks == 2 and not r.dealer_hits_soft_17 and r.double_on == (9, 10, 11) and not r.surrender
     assert rules_from_json({}) == Rules()
 
 

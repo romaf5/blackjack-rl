@@ -39,7 +39,7 @@ pytest
 
 ```bash
 blackjack-web                              # opens http://127.0.0.1:8000; loads checkpoints/ppo.pt + checkpoints/dqn.pt if present
-blackjack-web --checkpoint checkpoints/ppo.pt --checkpoint runs/other.pt --h17 --bets 5,10,25 --port 9000
+blackjack-web --checkpoint checkpoints/ppo.pt --checkpoint runs/other.pt --s17 --bets 5,10,25 --port 9000
 ```
 
 A casino-style table served straight from the RL environment: click chips to bet, keyboard
@@ -54,9 +54,9 @@ small stdlib HTTP server (`blackjack_rl/web`) + vanilla HTML/CSS/JS.
 ### In the terminal
 
 ```bash
-blackjack-play                # 6 decks, S17, DAS, late surrender, bets 1/2/4/8
+blackjack-play                # 6 decks, H17, DAS, late surrender, bets 1/2/4/8
 blackjack-play --hint         # shows the basic-strategy play and Hi-Lo bet suggestion
-blackjack-play --h17 --decks 2 --bets 5,10,25 --hide-count
+blackjack-play --s17 --decks 2 --bets 5,10,25 --hide-count
 ```
 
 Both front-ends drive `BlackjackEnv` directly: you see the same observation the agent gets
@@ -86,8 +86,10 @@ print(info["profit"], info["results"])
 * **Reward:** 0 until the round ends, then the round's profit in bet units (+1.5 for a natural on 1 unit,
   −4 for a lost doubled 2-unit bet, ...).
 * **Illegal actions raise** `ValueError` — use `info["action_mask"]` / `info["legal_actions"]`.
-* Rules are a frozen dataclass (`Rules`): decks, penetration, S17/H17, blackjack payout, peek, DAS,
-  double restrictions, max splits, RSA, hit split aces, late surrender.
+* Rules are a frozen dataclass (`Rules`): decks, penetration, H17/S17, blackjack payout, peek, DAS,
+  double restrictions, max splits, RSA, hit split aces, late surrender. Defaults are the common US
+  shoe game: 6 decks, **dealer hits soft 17**, DAS, late surrender, peek, 3:2, 75 % penetration
+  (`--s17` etc. on every CLI to change them).
 
 ## Baselines and evaluation
 
@@ -98,12 +100,13 @@ blackjack-eval --agent random --rounds 100000
 blackjack-strategy --agent basic                     # print the basic-strategy tables the agent is judged against
 ```
 
-Sanity check: with the default rules basic strategy measures **−0.40 % ± 0.22 % of the initial bet
-over 1M rounds**, matching the published house edge for 6D / S17 / DAS / LS.
+Sanity check: with the default rules basic strategy measures **−0.62 % ± 0.22 % of the initial bet
+over 1M rounds**, matching the published house edge for 6D / H17 / DAS / LS (with `--s17` it measures
+−0.40 % ± 0.22 %, again matching the published ≈ −0.4 %).
 
 ## Basic strategy reference
 
-The chart the agents are measured against — default table (6 decks, S17, DAS, late surrender),
+The chart the agents are measured against — default table (6 decks, **H17**, DAS, late surrender),
 as rendered by `blackjack-strategy --agent basic --open`:
 
 ![Basic strategy chart: hard totals, soft totals and pairs vs dealer up-card](docs/screenshot-basic-strategy.png)
@@ -121,13 +124,13 @@ HARD          2   3   4   5   6   7   8   9   T   A
 8              H   H   H   H   H   H   H   H   H   H
 9              H   D   D   D   D   H   H   H   H   H
 10             D   D   D   D   D   D   D   D   H   H
-11             D   D   D   D   D   D   D   D   D   H
+11             D   D   D   D   D   D   D   D   D   D
 12             H   H   S   S   S   H   H   H   H   H
 13             S   S   S   S   S   H   H   H   H   H
 14             S   S   S   S   S   H   H   H   H   H
-15             S   S   S   S   S   H   H   H   R   H
+15             S   S   S   S   S   H   H   H   R   R
 16             S   S   S   S   S   H   H   R   R   R
-17             S   S   S   S   S   S   S   S   S   S
+17             S   S   S   S   S   S   S   S   S   R
 18             S   S   S   S   S   S   S   S   S   S
 19             S   S   S   S   S   S   S   S   S   S
 
@@ -137,8 +140,8 @@ A,3            H   H   H   D   D   H   H   H   H   H
 A,4            H   H   D   D   D   H   H   H   H   H
 A,5            H   H   D   D   D   H   H   H   H   H
 A,6            H   D   D   D   D   H   H   H   H   H
-A,7            S   D   D   D   D   S   S   H   H   H
-A,8            S   S   S   S   S   S   S   S   S   S
+A,7            D   D   D   D   D   S   S   H   H   H
+A,8            S   S   S   S   D   S   S   S   S   S
 A,9            S   S   S   S   S   S   S   S   S   S
 
 PAIRS         2   3   4   5   6   7   8   9   T   A
@@ -148,7 +151,7 @@ PAIRS         2   3   4   5   6   7   8   9   T   A
 5,5            D   D   D   D   D   D   D   D   H   H
 6,6            P   P   P   P   P   H   H   H   H   H
 7,7            P   P   P   P   P   P   H   H   H   H
-8,8            P   P   P   P   P   P   P   P   P   P
+8,8            P   P   P   P   P   P   P   P   P   R
 9,9            P   P   P   P   P   S   P   P   S   S
 T,T            S   S   S   S   S   S   S   S   S   S
 A,A            P   P   P   P   P   P   P   P   P   P
@@ -156,9 +159,11 @@ A,A            P   P   P   P   P   P   P   P   P   P
 
 </details>
 
-`D` falls back to hit (hard 9–11, soft ≤ 17) or stand (soft 18) when doubling isn't allowed, `R` falls
-back to hit — the same fallback logic `BasicStrategyAgent` uses. `--h17`, `--no-das`, `--no-surrender`,
-`--decks N` etc. regenerate the chart for other tables; `--agent hilo` adds the Hi-Lo bet spread.
+`D` falls back to hit (hard 9–11, soft ≤ 17) or stand (soft 18/19) when doubling isn't allowed, `R` falls
+back to hit (or stand for 17 vs A) — the same fallback logic `BasicStrategyAgent` uses. The H17-specific
+cells are 11 vs A double, A,8 vs 6 double, A,7 vs 2 double, and surrender on 15 vs A, 17 vs A and 8,8 vs A.
+`--s17`, `--no-das`, `--no-surrender`, `--decks N` etc. regenerate the chart for other tables;
+`--agent hilo` adds the Hi-Lo bet spread.
 
 ## Vectorized env
 
@@ -215,8 +220,7 @@ the bet spread — takes millions of rounds; `--rounds`, `--lr`, `--batch-size`,
 `--eps-decay-frac` and `--resume` are the knobs. `--bets 1` trains a flat-betting player if you only
 care about the playing decisions.
 
-Reference points (6D S17 DAS LS, bets 1/2/4/8, M2 Max CPU — the network is far too small for a
-GPU to help, `--device mps` is slower):
+Reference points (6D H17 DAS LS, bets 1/2/4/8, Apple M2 Max):
 
 | run | wall time | EV / unit wagered | agreement with basic strategy (hard / soft / pairs) | bet spread |
 |---|---|---|---|---|
