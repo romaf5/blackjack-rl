@@ -21,6 +21,7 @@ dev = ["pytest>=7"]
 [project.scripts]
 blackjack-play = "blackjack_rl.cli.play:main"
 blackjack-train = "blackjack_rl.cli.train:main"
+blackjack-train-ppo = "blackjack_rl.cli.train_ppo:main"
 blackjack-eval = "blackjack_rl.cli.evaluate:main"
 blackjack-strategy = "blackjack_rl.cli.strategy:main"
 blackjack-web = "blackjack_rl.web.server:main"

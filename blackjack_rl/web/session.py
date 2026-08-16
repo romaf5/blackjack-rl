@@ -13,6 +13,7 @@ from ..env import BlackjackEnv, Phase
 from ..env.blackjack_env import N_PLAY_ACTIONS
 
 ACTION_BY_NAME = {name: a for a, name in ACTION_NAMES.items()}
+RL_NAMES = ("rl", "dqn", "ppo")
 
 
 def card_json(c: Card) -> Dict[str, Any]:
@@ -24,15 +25,19 @@ class GameSession:
                  bankroll: float = 100.0, seed: Optional[int] = None, checkpoint: Optional[str] = None):
         self.lock = threading.Lock()
         self.checkpoint = checkpoint
-        self.dqn = None
-        self.dqn_error = None
+        self.rl = None            # loaded RL agent (DQNAgent or PPOAgent)
+        self.rl_error = None
         if checkpoint and os.path.exists(checkpoint):
             try:
-                from ..agents.dqn import DQNAgent
-                self.dqn = DQNAgent.load(checkpoint)
+                from ..agents import load_rl_agent
+                self.rl = load_rl_agent(checkpoint)
             except Exception as e:  # pragma: no cover - depends on local files
-                self.dqn_error = str(e)
+                self.rl_error = str(e)
         self.new_game(rules, bet_sizes, bankroll, seed)
+
+    @property
+    def rl_kind(self) -> Optional[str]:
+        return getattr(self.rl, "name", None) if self.rl is not None else None
 
     # ------------------------------------------------------------------ lifecycle
     def new_game(self, rules: Optional[Rules], bet_sizes: Sequence[float], bankroll: float,
@@ -49,14 +54,14 @@ class GameSession:
         self.round_over = False
         self.basic = BasicStrategyAgent(self.rules, count_bets=False)
         self.hilo = BasicStrategyAgent(self.rules, count_bets=True)
-        if self.dqn is not None and self.dqn.n_actions != self.env.action_space.n:
-            self.dqn_error = (f"checkpoint expects {self.dqn.n_actions - N_PLAY_ACTIONS} bet sizes, "
-                              f"this table has {len(self.env.bet_sizes)}")
-            self.dqn_usable = False
+        if self.rl is not None and self.rl.n_actions != self.env.action_space.n:
+            self.rl_error = (f"checkpoint expects {self.rl.n_actions - N_PLAY_ACTIONS} bet sizes, "
+                             f"this table has {len(self.env.bet_sizes)}")
+            self.rl_usable = False
         else:
-            self.dqn_usable = self.dqn is not None
-            if self.dqn_usable:
-                self.dqn_error = None
+            self.rl_usable = self.rl is not None
+            if self.rl_usable:
+                self.rl_error = None
         self.obs, self.info = self.env.reset()
         return self.state()
 
@@ -122,10 +127,10 @@ class GameSession:
             return self.basic
         if name == "hilo":
             return self.hilo
-        if name == "dqn":
-            if not self.dqn_usable:
-                raise ValueError(self.dqn_error or "no DQN checkpoint loaded")
-            return self.dqn
+        if name in RL_NAMES:
+            if not self.rl_usable:
+                raise ValueError(self.rl_error or "no RL checkpoint loaded")
+            return self.rl
         raise ValueError(f"unknown agent {name}")
 
     # ------------------------------------------------------------------ advice
@@ -143,28 +148,31 @@ class GameSession:
             bs = basic_strategy(info["player_total"], info["is_soft"], info["is_pair"], info["dealer_upcard"],
                                 legal, self.rules)
             out["basic"] = ACTION_NAMES[bs]
-        if self.dqn_usable:
-            q = self.dqn.q_values(self.obs) * self.env.max_bet   # back to bet units
-            mask = info["action_mask"].astype(bool)
+        if self.rl_usable:
+            mask = info["action_mask"]
+            kind = getattr(self.rl, "score_kind", "q")
+            scores = self.rl.action_scores(self.obs, mask)
+            if kind == "q":
+                scores = scores * self.env.max_bet   # back to bet units
             entries = []
             for i in np.flatnonzero(mask):
-                entries.append({"action": self.env.action_name(int(i)), "id": int(i), "q": float(q[i])})
-            best = max(entries, key=lambda e: e["q"]) if entries else None
-            out["dqn"] = {"best": best["action"] if best else None, "best_id": best["id"] if best else None,
-                          "q": entries}
+                entries.append({"action": self.env.action_name(int(i)), "id": int(i), "score": float(scores[i])})
+            best = max(entries, key=lambda e: e["score"]) if entries else None
+            out["rl"] = {"kind": kind, "agent": self.rl_kind, "best": best["action"] if best else None,
+                         "best_id": best["id"] if best else None, "scores": entries}
         return out
 
     # ------------------------------------------------------------------ strategy report
-    def strategy_report_html(self, agent: str = "dqn", true_count: float = 0.0) -> str:
+    def strategy_report_html(self, agent: str = "rl", true_count: float = 0.0) -> str:
         from ..cli.strategy import build_report, render_html
-        if agent not in ("basic", "hilo", "dqn"):
+        if agent not in ("basic", "hilo") + RL_NAMES:
             raise ValueError(f"unknown agent {agent}")
-        if agent == "dqn" and not self.dqn_usable:
-            raise ValueError(self.dqn_error or "no DQN checkpoint loaded")
-        a = self.dqn if agent == "dqn" else (self.hilo if agent == "hilo" else self.basic)
+        if agent in RL_NAMES and not self.rl_usable:
+            raise ValueError(self.rl_error or "no RL checkpoint loaded")
+        a = self.rl if agent in RL_NAMES else (self.hilo if agent == "hilo" else self.basic)
         shoe = self.env.game.shoe
-        rep = build_report(agent, a, self.env, true_count, shoe.cards_remaining / shoe.total_cards,
-                           self.checkpoint if agent == "dqn" else None)
+        rep = build_report("rl" if agent in RL_NAMES else agent, a, self.env, true_count,
+                           shoe.cards_remaining / shoe.total_cards, self.checkpoint if agent in RL_NAMES else None)
         return render_html(rep)
 
     # ------------------------------------------------------------------ state
@@ -239,8 +247,10 @@ class GameSession:
                 "penetration": shoe.penetration,
                 "num_shuffles": shoe.num_shuffles,
             },
-            "agents": ["basic", "hilo"] + (["dqn"] if self.dqn_usable else []),
-            "dqn": {"loaded": self.dqn_usable, "checkpoint": self.checkpoint, "error": self.dqn_error},
+            "agents": ["basic", "hilo"] + (["rl"] if self.rl_usable else []),
+            "rl": {"loaded": self.rl_usable, "checkpoint": self.checkpoint, "kind": self.rl_kind,
+                   "score_kind": getattr(self.rl, "score_kind", None) if self.rl_usable else None,
+                   "error": self.rl_error},
         }
         if self.round_over:
             state["last"] = {

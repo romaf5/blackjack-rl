@@ -10,8 +10,9 @@ from .common import add_rules_args, env_from_args, make_agent
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(description="Evaluate a blackjack agent.")
     add_rules_args(p)
-    p.add_argument("--agent", choices=["random", "basic", "hilo", "dqn"], default="basic")
-    p.add_argument("--checkpoint", type=str, default=None, help="path to a DQN checkpoint (.pt)")
+    p.add_argument("--agent", choices=["random", "basic", "hilo", "dqn", "ppo", "rl"], default="basic",
+                   help="rl = whatever kind the checkpoint holds")
+    p.add_argument("--checkpoint", type=str, default=None, help="path to a DQN/PPO checkpoint (.pt)")
     p.add_argument("--rounds", type=int, default=100_000)
     p.add_argument("--seed", type=int, default=0)
     p.add_argument("--progress", type=int, default=0, help="print progress every N rounds")

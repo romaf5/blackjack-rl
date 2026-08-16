@@ -81,7 +81,7 @@
       <div id="advice-body" class="panel-body">
         <div class="kv"><span>Basic strategy</span><b id="adv-basic">–</b></div>
         <div class="kv"><span>Hi-Lo bet</span><b id="adv-hilo">–</b></div>
-        <div class="kv"><span>DQN agent</span><b id="adv-dqn">–</b></div>
+        <div class="kv"><span id="adv-rl-label">RL agent</span><b id="adv-rl">–</b></div>
         <div id="qbars" class="qbars"></div>
         <div id="dqn-note" class="muted small"></div>
       </div>
@@ -94,7 +94,7 @@
           <select id="agent-select">
             <option value="basic">Basic strategy (flat bet)</option>
             <option value="hilo">Basic + Hi-Lo betting</option>
-            <option value="dqn">DQN agent</option>
+            <option value="rl">RL agent</option>
           </select>
           <button id="btn-auto" class="primary">▶ Start</button>
         </div>

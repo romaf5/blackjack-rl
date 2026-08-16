@@ -65,6 +65,7 @@ class ReplayBuffer:
 
 class DQNAgent(Agent):
     name = "dqn"
+    score_kind = "q"   # action_scores() returns Q-values in *scaled* reward units (multiply by max bet)
 
     def __init__(self, obs_dim: int, n_actions: int, hidden: Sequence[int] = (256, 256),
                  lr: float = 5e-4, gamma: float = 1.0, device: Optional[str] = None,
@@ -96,6 +97,11 @@ class DQNAgent(Agent):
         q = self.q_values(obs)
         q = np.where(mask.astype(bool), q, -np.inf)
         return int(np.argmax(q))
+
+    def action_scores(self, obs: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        q = self.q_values(obs).astype(np.float64)
+        q[~np.asarray(mask).astype(bool)] = np.nan
+        return q
 
     def act(self, obs: np.ndarray, info: Dict[str, Any]) -> int:
         mask = info["action_mask"]
@@ -138,6 +144,7 @@ class DQNAgent(Agent):
     # ------------------------------------------------------------------ persistence
     def save(self, path: str, extra: Optional[dict] = None) -> None:
         torch.save({
+            "kind": "dqn",
             "obs_dim": self.obs_dim, "n_actions": self.n_actions, "hidden": self.hidden,
             "gamma": self.gamma, "state_dict": self.q.state_dict(), "extra": extra or {},
         }, path)

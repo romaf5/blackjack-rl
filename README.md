@@ -17,8 +17,9 @@ the exact same environment yourself.
 blackjack_rl/
 ├── engine/       pure-Python game engine (no RL deps): shoe + Hi-Lo count, hands, rules, round state machine
 ├── env/          Gymnasium env  "BlackjackFull-v0"  (bet phase → play phase, action mask, persistent shoe)
-├── agents/       random, basic strategy (+ Hi-Lo bet spread), masked Double-DQN (PyTorch)
-├── cli/          blackjack-play / blackjack-train / blackjack-eval / blackjack-strategy
+│                 + BlackjackVectorEnv: N envs stepped as a batch, auto-reset, subprocess workers
+├── agents/       random, basic strategy (+ Hi-Lo bet spread), masked Double-DQN, masked PPO (PyTorch)
+├── cli/          blackjack-play / blackjack-train / blackjack-train-ppo / blackjack-eval / blackjack-strategy
 ├── web/          blackjack-web: browser UI (stdlib HTTP server + vanilla JS) on top of the env
 └── evaluation.py EV / variance / win-rate / bet-by-count statistics
 tests/            pytest suite for the engine, env and baselines
@@ -158,6 +159,37 @@ A,A            P   P   P   P   P   P   P   P   P   P
 back to hit — the same fallback logic `BasicStrategyAgent` uses. `--h17`, `--no-das`, `--no-surrender`,
 `--decks N` etc. regenerate the chart for other tables; `--agent hilo` adds the Hi-Lo bet spread.
 
+## Vectorized env
+
+```python
+from blackjack_rl.env.vector_env import BlackjackVectorEnv
+
+venv = BlackjackVectorEnv(1024, workers=8, seed=0)      # 1024 independent shoes, 8 processes
+obs, mask = venv.reset()                                 # (N, 22) float32, (N, n_actions) bool
+obs, reward, done, mask, info = venv.step(actions)       # finished rounds auto-reset; info: profit/wagered/true_count/bet
+venv.close()
+```
+
+The game logic is pure Python, so the vector env shards the envs across subprocesses: on an M2 Max
+1 worker ≈ 36k env-steps/s, 8 workers ≈ **240k env-steps/s (~110k rounds/s)** with a random policy —
+enough that the neural network, not the environment, is the bottleneck.
+
+## Train with PPO (uses the Apple GPU)
+
+```bash
+blackjack-train-ppo --total-rounds 50000000 --num-envs 2048 --workers 8 --device auto   # auto = mps > cuda > cpu
+blackjack-eval --agent ppo --checkpoint checkpoints/ppo.pt --rounds 300000
+blackjack-strategy --agent ppo --checkpoint checkpoints/ppo.pt --open
+blackjack-web --checkpoint checkpoints/ppo.pt          # advisor shows the policy's probabilities
+```
+
+`agents/ppo.py` is a masked actor-critic PPO (separate policy/value MLPs, GAE, clipped objective,
+entropy bonus with linear anneal, Gumbel-max sampling so it runs on any device). Rollouts come from
+the vector env, so every forward pass is a batch of thousands of observations and the update works on
+65k transitions at a time — that is where the GPU helps: on the M2 Max the same run does **~40k rounds/s
+on MPS vs ~32k on CPU** with 1024 envs (≈ 62k rounds/s on MPS with 2048 envs). For the DQN's
+one-observation-at-a-time loop the GPU is a loss (dispatch latency), so `blackjack-train` stays on CPU.
+
 ## Train the DQN
 
 ```bash
@@ -189,7 +221,8 @@ GPU to help, `--device mps` is slower):
 |---|---|---|---|---|
 | basic strategy + Hi-Lo (benchmark) | – | ≈ −0.3 % … +0.3 % | 100 % | 1 → 8 |
 | DQN, 400k rounds, batch 256 | 10 min | −4.6 % | 63 / 54 / 55 % | none |
-| DQN, 3M rounds, batch 1024, `--train-every 8` | 36 min | **−1.2 %** | **79 / 65 / 62 %** | partial: ~2 units at TC ≤ −4, 4 units around 0, 8 units at TC ≥ +6 |
+| DQN, 3M rounds, batch 1024, `--train-every 8` | 36 min | −1.2 % | 79 / 65 / 62 % | partial: ~2 units at TC ≤ −4, 4 units around 0, 8 units at TC ≥ +6 |
+| PPO, 50M rounds, 2048 envs × 8 workers, MPS | PPO_TIME | PPO_EV | PPO_AGREE | PPO_SPREAD |
 
 So the agent is clearly learning (it hits/stands correctly on almost every hard total and has started
 to size bets with the count) but is still short of basic strategy on doubles, soft hands and pairs —

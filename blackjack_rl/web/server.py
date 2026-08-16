@@ -94,7 +94,7 @@ def make_handler(session: GameSession):
                 return self._static("index.html")
             if path == "/report":
                 q = parse_qs(url.query)
-                agent = (q.get("agent") or ["dqn"])[0]
+                agent = (q.get("agent") or ["rl"])[0]
                 try:
                     tc = float((q.get("tc") or ["0"])[0])
                 except ValueError:
@@ -164,16 +164,19 @@ def main(argv=None) -> None:
     p.add_argument("--host", type=str, default="127.0.0.1")
     p.add_argument("--bankroll", type=float, default=100.0)
     p.add_argument("--seed", type=int, default=None)
-    p.add_argument("--checkpoint", type=str, default="checkpoints/dqn.pt",
-                   help="DQN checkpoint for the advisor / autoplay (optional)")
+    p.add_argument("--checkpoint", type=str, default="checkpoints/ppo.pt",
+                   help="DQN or PPO checkpoint for the advisor / autoplay (optional; falls back to checkpoints/dqn.pt)")
     p.add_argument("--no-browser", action="store_true")
     a = p.parse_args(argv)
+    checkpoint = a.checkpoint
+    if checkpoint == "checkpoints/ppo.pt" and not os.path.exists(checkpoint) and os.path.exists("checkpoints/dqn.pt"):
+        checkpoint = "checkpoints/dqn.pt"
     session = GameSession(rules=rules_from_args(a), bet_sizes=bets_from_args(a), bankroll=a.bankroll,
-                          seed=a.seed, checkpoint=a.checkpoint)
-    if session.dqn_usable:
-        print(f"DQN advisor loaded from {a.checkpoint}")
-    elif a.checkpoint:
-        print(f"(no DQN advisor: {session.dqn_error or a.checkpoint + ' not found'})")
+                          seed=a.seed, checkpoint=checkpoint)
+    if session.rl_usable:
+        print(f"RL advisor ({session.rl_kind}) loaded from {checkpoint}")
+    elif checkpoint:
+        print(f"(no RL advisor: {session.rl_error or checkpoint + ' not found'})")
     serve(session, a.host, a.port, open_browser=not a.no_browser)
 
 

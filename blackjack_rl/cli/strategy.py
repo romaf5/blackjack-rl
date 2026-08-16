@@ -29,7 +29,7 @@ LETTER_NAMES = {"S": "stand", "H": "hit", "D": "double", "P": "split", "R": "sur
 class Cell:
     action: str                       # agent's letter
     basic: str                        # basic strategy letter
-    q: Optional[Dict[str, float]] = None  # DQN Q-values (bet units) per legal action name
+    q: Optional[Dict[str, float]] = None  # RL scores per legal action name (Q in bet units, or policy probability)
 
     @property
     def agrees(self) -> bool:
@@ -49,8 +49,9 @@ class StrategyReport:
     pairs: Dict[Tuple[int, int], Cell] = field(default_factory=dict)   # (pair value, dealer)
     agent_bets: Optional[List[float]] = None                            # per TC in TC_RANGE (None for basic)
     hilo_bets: List[float] = field(default_factory=list)
-    bet_q: Optional[List[List[float]]] = None                           # [tc][bet index] (dqn only)
+    bet_q: Optional[List[List[float]]] = None                           # [tc][bet index] (RL agents only)
     compare: bool = True
+    score_kind: str = "q"                                               # "q" (DQN) or "prob" (PPO)
 
     def agreement(self, table: Dict) -> Tuple[int, int]:
         cells = list(table.values())
@@ -90,10 +91,14 @@ def build_report(agent_kind: str, agent, env, true_count: float, decks_frac: flo
     rules = env.rules
     n_actions = env.action_space.n
     bet_frac = env.bet_sizes[0] / env.max_bet
-    is_dqn = agent_kind == "dqn"
+    is_rl = agent_kind in ("dqn", "ppo", "rl")
+    if is_rl:
+        agent_kind = getattr(agent, "name", agent_kind)          # resolve "rl" to the checkpoint's kind
+    score_kind = getattr(agent, "score_kind", "q") if is_rl else "q"
+    score_scale = env.max_bet if score_kind == "q" else 1.0
 
     def decide(total, is_soft, is_pair, dealer, legal) -> Tuple[Action, Optional[Dict[str, float]]]:
-        if is_dqn:
+        if is_rl:
             obs = encode_observation(
                 phase=1, player_total=total, is_soft=is_soft, is_pair=is_pair,
                 can_double=Action.DOUBLE in legal, can_split=Action.SPLIT in legal,
@@ -101,8 +106,8 @@ def build_report(agent_kind: str, agent, env, true_count: float, decks_frac: flo
                 true_count=true_count, decks_frac=decks_frac, bet_frac=bet_frac,
                 num_hands=1, max_splits=rules.max_splits)
             mask = _mask(legal, n_actions)
-            q = agent.q_values(obs) * env.max_bet
-            qd = {ACTION_NAMES[a]: float(q[int(a)]) for a in legal}
+            sc = agent.action_scores(obs, mask) * score_scale
+            qd = {ACTION_NAMES[a]: float(sc[int(a)]) for a in legal}
             return Action(agent.greedy_action(obs, mask)), qd
         return basic_strategy(total, is_soft, is_pair, dealer, legal, rules), None
 
@@ -113,7 +118,7 @@ def build_report(agent_kind: str, agent, env, true_count: float, decks_frac: flo
         return Cell(ACTION_LETTERS[act], ACTION_LETTERS[ref], q)
 
     rep = StrategyReport(agent_kind, checkpoint, rules, env.bet_sizes, true_count, decks_frac,
-                         compare=compare and is_dqn)
+                         compare=compare and is_rl, score_kind=score_kind)
     for total in range(5, 20):
         for d in DEALER_UPS:
             rep.hard[(total, d)] = cell(total, False, False, d)
@@ -126,7 +131,7 @@ def build_report(agent_kind: str, agent, env, true_count: float, decks_frac: flo
             rep.pairs[(pair, d)] = cell(total, is_soft, True, d)
 
     rep.hilo_bets = [env.bet_sizes[hi_lo_bet_index(tc, env.bet_sizes)] for tc in TC_RANGE]
-    if is_dqn:
+    if is_rl:
         bet_mask = np.zeros(n_actions, dtype=np.int8)
         bet_mask[N_PLAY_ACTIONS:] = 1
         rep.agent_bets, rep.bet_q = [], []
@@ -134,7 +139,7 @@ def build_report(agent_kind: str, agent, env, true_count: float, decks_frac: flo
             obs = encode_observation(phase=0, true_count=tc, decks_frac=decks_frac, bet_frac=0.0)
             act = agent.greedy_action(obs, bet_mask)
             rep.agent_bets.append(env.bet_sizes[act - N_PLAY_ACTIONS])
-            rep.bet_q.append([float(x) for x in agent.q_values(obs)[N_PLAY_ACTIONS:]])
+            rep.bet_q.append([float(x) for x in agent.action_scores(obs, bet_mask)[N_PLAY_ACTIONS:]])
     elif agent_kind == "hilo":
         rep.agent_bets = list(rep.hilo_bets)
     else:
@@ -175,11 +180,12 @@ def render_text(rep: StrategyReport) -> str:
     lines.append(_fmt_table("PAIRS", rep.pair_rows, rep.pairs, rep.compare))
     lines.append("\nBET by true count:")
     lines.append("TC        " + " ".join(f"{tc:>+5d}" for tc in TC_RANGE))
-    label = {"dqn": "agent", "hilo": "hi-lo", "basic": "flat"}[rep.agent_name]
+    label = {"hilo": "hi-lo", "basic": "flat"}.get(rep.agent_name, "agent")
     lines.append(f"{label:<10}" + " ".join(f"{b:>5g}" for b in rep.agent_bets))
-    if rep.agent_name == "dqn":
+    if rep.bet_q:
         lines.append("hi-lo ref " + " ".join(f"{b:>5g}" for b in rep.hilo_bets))
-        lines.append("\nQ-values (scaled reward units) per bet size:")
+        what = "Q-values (scaled reward units)" if rep.score_kind == "q" else "policy probability"
+        lines.append(f"\n{what} per bet size:")
         for i, b in enumerate(rep.bet_sizes):
             lines.append(f"bet {b:<6g}" + " ".join(f"{row[i]:>+5.3f}" for row in rep.bet_q))
     return "\n".join(lines)
@@ -252,7 +258,7 @@ def _cell_title(c: Cell) -> str:
     if c.action != c.basic:
         parts.append(f"basic strategy: {LETTER_NAMES[c.basic]}")
     if c.q:
-        parts.append("Q: " + "  ".join(f"{k} {v:+.3f}" for k, v in sorted(c.q.items(), key=lambda kv: -kv[1])))
+        parts.append("scores: " + "  ".join(f"{k} {v:+.3f}" for k, v in sorted(c.q.items(), key=lambda kv: -kv[1])))
     return html.escape(" · ".join(parts))
 
 
@@ -284,7 +290,7 @@ def _bet_svg(rep: StrategyReport) -> str:
     max_bet = max(rep.bet_sizes)
     n = len(TC_RANGE)
     gw = pw / n
-    two = rep.agent_name == "dqn"
+    two = rep.bet_q is not None
     bw = min(22, (gw - 8) / (2 if two else 1))
     y = lambda v: top + ph * (1 - v / max_bet)
     parts = [f'<svg viewBox="0 0 {W} {H}" width="100%" height="{H}" role="img" aria-label="bet size by true count">']
@@ -296,7 +302,7 @@ def _bet_svg(rep: StrategyReport) -> str:
     parts.append(f'<line class="axis" x1="{left}" x2="{W - right}" y1="{top + ph}" y2="{top + ph}"/>')
     for i, tc in enumerate(TC_RANGE):
         cx = left + gw * (i + 0.5)
-        series = [("bar-agent", rep.agent_bets[i], "agent" if two else {"hilo": "Hi-Lo", "basic": "flat"}[rep.agent_name])]
+        series = [("bar-agent", rep.agent_bets[i], rep.agent_name if two else {"hilo": "Hi-Lo", "basic": "flat"}[rep.agent_name])]
         if two:
             series.append(("bar-ref", rep.hilo_bets[i], "Hi-Lo reference"))
         x0 = cx - (bw * len(series) + 2 * (len(series) - 1)) / 2
@@ -330,8 +336,9 @@ def _q_table(rep: StrategyReport) -> str:
             best = i == int(np.argmax(row))
             pct = int(min(1.0, abs(v) / scale) * 60)
             col = "var(--div-pos)" if v >= 0 else "var(--div-neg)"
+            what = "Q = " if rep.score_kind == "q" else "p = "
             out.append(f'<td class="{"best" if best else ""}" style="background:color-mix(in srgb,{col} {pct}%,var(--div-mid))" '
-                       f'title="TC {TC_RANGE[t]:+d}, bet {b:g}: Q = {v:+.4f} (scaled units)">{v:+.3f}</td>')
+                       f'title="TC {TC_RANGE[t]:+d}, bet {b:g}: {what}{v:+.4f}">{v:+.3f}</td>')
         out.append("</tr>")
     out.append("</tbody></table>")
     return "".join(out)
@@ -354,10 +361,12 @@ def render_html(rep: StrategyReport) -> str:
         f'<span><i class="sw {k}"></i>{k} = {v}</span>' for k, v in LETTER_NAMES.items())
         + (' <label><input type="checkbox" id="only-diff"> highlight differences only</label>' if rep.compare else "")
         + "</div>")
-    bet_label = {"dqn": "DQN agent vs Hi-Lo reference", "hilo": "Hi-Lo bet spread", "basic": "flat betting"}[rep.agent_name]
+    bet_label = {"hilo": "Hi-Lo bet spread", "basic": "flat betting"}.get(rep.agent_name, f"{rep.agent_name.upper()} agent vs Hi-Lo reference")
     q_section = ""
     if rep.bet_q:
-        q_section = ('<h2 style="margin-top:18px">Q-values per bet size (scaled reward units; outlined = chosen)</h2>' + _q_table(rep))
+        what = ("Q-values per bet size (scaled reward units; outlined = chosen)" if rep.score_kind == "q"
+                else "Policy probability per bet size (outlined = chosen)")
+        q_section = (f'<h2 style="margin-top:18px">{what}</h2>' + _q_table(rep))
     body = f"""<div class="wrap">
 <h1>{html.escape(title)}</h1>
 <div class="meta">{html.escape(rep.rules.describe())} &middot; bets {', '.join(f'{b:g}' for b in rep.bet_sizes)}{src}<br>
@@ -381,7 +390,8 @@ play tables assume true count {rep.true_count:+.1f} and {rep.decks_frac:.0%} of 
 def main(argv=None) -> None:
     p = argparse.ArgumentParser(description="Show an agent's strategy tables and bet spread.")
     add_rules_args(p)
-    p.add_argument("--agent", choices=["basic", "hilo", "dqn"], default="dqn")
+    p.add_argument("--agent", choices=["basic", "hilo", "dqn", "ppo", "rl"], default="rl",
+                   help="rl = whatever kind the checkpoint holds")
     p.add_argument("--checkpoint", type=str, default=None)
     p.add_argument("--true-count", type=float, default=0.0, help="true count to assume for the play tables")
     p.add_argument("--decks-frac", type=float, default=0.6, help="fraction of shoe remaining to assume")
@@ -399,7 +409,7 @@ def main(argv=None) -> None:
 
     path = a.html
     if a.open and not path:
-        path = f"strategy_{a.agent}.html"
+        path = f"strategy_{rep.agent_name}.html"
     if path:
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:

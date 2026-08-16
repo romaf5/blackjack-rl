@@ -174,7 +174,7 @@ function render() {
       chips.appendChild(btn);
     });
     $("#bet-hint").textContent = (showAdvice && advice && advice.hilo_bet != null)
-      ? `Hi-Lo suggests ${fmt(advice.hilo_bet)}` + (advice.dqn && advice.dqn.best ? ` · DQN would ${advice.dqn.best}` : "") : "";
+      ? `Hi-Lo suggests ${fmt(advice.hilo_bet)}` + (advice.rl && advice.rl.best ? ` · ${(advice.rl.agent || "RL").toUpperCase()} would ${advice.rl.best}` : "") : "";
   } else {
     betPrompt.classList.add("hidden");
   }
@@ -224,37 +224,44 @@ function render() {
   $("#shoe-text").textContent = `${c.cards_dealt} / ${c.total_cards} cards dealt · cut card at ${Math.round(100 * c.penetration)}%`;
 
   // advisor
-  const advBasic = $("#adv-basic"), advHilo = $("#adv-hilo"), advDqn = $("#adv-dqn"), qbars = $("#qbars");
+  const advBasic = $("#adv-basic"), advHilo = $("#adv-hilo"), advRl = $("#adv-rl"), qbars = $("#qbars");
+  const rlName = s.rl.kind ? s.rl.kind.toUpperCase() : "RL";
+  $("#adv-rl-label").textContent = s.rl.loaded ? `${rlName} agent` : "RL agent";
   qbars.innerHTML = "";
   if (advice && s.phase !== "done") {
     advBasic.textContent = advice.basic ? advice.basic.toUpperCase() : "–";
     advHilo.textContent = advice.hilo_bet != null ? `bet ${fmt(advice.hilo_bet)}` : "–";
-    if (advice.dqn) {
-      advDqn.textContent = advice.dqn.best ? advice.dqn.best.toUpperCase() : "–";
-      const qs = advice.dqn.q;
-      const maxAbs = Math.max(0.05, ...qs.map((e) => Math.abs(e.q)));
+    if (advice.rl) {
+      advRl.textContent = advice.rl.best ? advice.rl.best.toUpperCase() : "–";
+      const qs = advice.rl.scores;
+      const isProb = advice.rl.kind === "prob";
+      const maxAbs = Math.max(0.05, ...qs.map((e) => Math.abs(e.score)));
       qs.forEach((e) => {
         const row = document.createElement("div");
-        row.className = "qbar" + (e.action === advice.dqn.best ? " best" : "");
-        const w = 50 * Math.abs(e.q) / maxAbs;
-        const left = e.q >= 0 ? 50 : 50 - w;
-        row.innerHTML = `<span>${e.action}</span><div class="track"><i class="${e.q < 0 ? "neg" : ""}" style="left:${left}%;width:${w}%"></i></div><span class="val">${fmt(e.q, true)}</span>`;
+        row.className = "qbar" + (e.action === advice.rl.best ? " best" : "");
+        let left, w, cls = "";
+        if (isProb) { left = 0; w = 100 * e.score; }
+        else { w = 50 * Math.abs(e.score) / maxAbs; left = e.score >= 0 ? 50 : 50 - w; cls = e.score < 0 ? "neg" : ""; }
+        const val = isProb ? (100 * e.score).toFixed(1) + "%" : fmt(e.score, true);
+        row.innerHTML = `<span>${e.action}</span><div class="track"><i class="${cls}" style="left:${left}%;width:${w}%"></i></div><span class="val">${val}</span>`;
         qbars.appendChild(row);
       });
     } else {
-      advDqn.textContent = "–";
+      advRl.textContent = "–";
     }
   } else {
-    advBasic.textContent = advHilo.textContent = advDqn.textContent = "–";
+    advBasic.textContent = advHilo.textContent = advRl.textContent = "–";
   }
-  $("#dqn-note").textContent = s.dqn.loaded ? `Q-values in bet units · ${s.dqn.checkpoint}` :
-    (s.dqn.error ? `DQN not available: ${s.dqn.error}` : "No DQN checkpoint found — run blackjack-train, then restart with --checkpoint");
+  $("#dqn-note").textContent = s.rl.loaded
+    ? `${s.rl.score_kind === "prob" ? "policy probabilities" : "Q-values in bet units"} · ${s.rl.checkpoint}`
+    : (s.rl.error ? `RL agent not available: ${s.rl.error}` : "No checkpoint found — run blackjack-train-ppo (or blackjack-train), then restart with --checkpoint");
 
   // agent select
   const sel = $("#agent-select");
-  const dqnOpt = sel.querySelector('option[value="dqn"]');
-  dqnOpt.disabled = !s.dqn.loaded;
-  if (dqnOpt.disabled && sel.value === "dqn") sel.value = "basic";
+  const rlOpt = sel.querySelector('option[value="rl"]');
+  rlOpt.disabled = !s.rl.loaded;
+  rlOpt.textContent = s.rl.loaded ? `${rlName} agent` : "RL agent (no checkpoint)";
+  if (rlOpt.disabled && sel.value === "rl") sel.value = "basic";
 
   // session
   $("#wlp").textContent = `${s.wins} / ${s.losses} / ${s.pushes}`;
