@@ -164,19 +164,18 @@ def main(argv=None) -> None:
     p.add_argument("--host", type=str, default="127.0.0.1")
     p.add_argument("--bankroll", type=float, default=100.0)
     p.add_argument("--seed", type=int, default=None)
-    p.add_argument("--checkpoint", type=str, default="checkpoints/ppo.pt",
-                   help="DQN or PPO checkpoint for the advisor / autoplay (optional; falls back to checkpoints/dqn.pt)")
+    p.add_argument("--checkpoint", type=str, action="append", default=None,
+                   help="DQN/PPO checkpoint for the advisor / autoplay; repeat to load several "
+                        "(default: checkpoints/ppo.pt and checkpoints/dqn.pt if they exist)")
     p.add_argument("--no-browser", action="store_true")
     a = p.parse_args(argv)
-    checkpoint = a.checkpoint
-    if checkpoint == "checkpoints/ppo.pt" and not os.path.exists(checkpoint) and os.path.exists("checkpoints/dqn.pt"):
-        checkpoint = "checkpoints/dqn.pt"
+    checkpoints = a.checkpoint or [c for c in ("checkpoints/ppo.pt", "checkpoints/dqn.pt") if os.path.exists(c)]
     session = GameSession(rules=rules_from_args(a), bet_sizes=bets_from_args(a), bankroll=a.bankroll,
-                          seed=a.seed, checkpoint=checkpoint)
-    if session.rl_usable:
-        print(f"RL advisor ({session.rl_kind}) loaded from {checkpoint}")
-    elif checkpoint:
-        print(f"(no RL advisor: {session.rl_error or checkpoint + ' not found'})")
+                          seed=a.seed, checkpoint=checkpoints)
+    for sl in session.rl_slots:
+        print(f"RL agent '{sl.key}' ({sl.kind}) from {sl.checkpoint}" if sl.usable else f"(could not use {sl.checkpoint}: {sl.error})")
+    if not session.rl_slots:
+        print("(no RL checkpoints found — train one with blackjack-train-ppo / blackjack-train)")
     serve(session, a.host, a.port, open_browser=not a.no_browser)
 
 

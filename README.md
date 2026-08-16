@@ -38,17 +38,18 @@ pytest
 ### In the browser (recommended)
 
 ```bash
-blackjack-web                              # opens http://127.0.0.1:8000
-blackjack-web --checkpoint checkpoints/dqn.pt --h17 --bets 5,10,25 --port 9000
+blackjack-web                              # opens http://127.0.0.1:8000; loads checkpoints/ppo.pt + checkpoints/dqn.pt if present
+blackjack-web --checkpoint checkpoints/ppo.pt --checkpoint runs/other.pt --h17 --bets 5,10,25 --port 9000
 ```
 
 A casino-style table served straight from the RL environment: click chips to bet, keyboard
 shortcuts (`1-9` bet, `H/S/D/P/R` play, `Enter` next round), split hands, hole-card reveal,
 running/true count and shoe penetration, and an **advisor panel** showing what basic strategy,
-Hi-Lo betting and the trained DQN would do (with the DQN's Q-values per action). **Autoplay** lets
-any agent (basic / Hi-Lo / DQN) play the table while you watch. ⚙ Table opens a form to start a
-new table with different rules, bet sizes and bankroll. Zero front-end dependencies — a small
-stdlib HTTP server (`blackjack_rl/web`) + vanilla HTML/CSS/JS.
+Hi-Lo betting and every loaded RL agent (DQN and/or PPO) would do — with the DQN's Q-values or the
+PPO policy's probabilities per action. **Autoplay** lets any agent (basic / Hi-Lo / DQN / PPO) play
+the table while you watch, 📊 Strategy opens the selected agent's strategy report, and ⚙ Table
+starts a new table with different rules, bet sizes and bankroll. Zero front-end dependencies — a
+small stdlib HTTP server (`blackjack_rl/web`) + vanilla HTML/CSS/JS.
 
 ### In the terminal
 

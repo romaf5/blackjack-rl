@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 import numpy as np
 
@@ -20,24 +20,86 @@ def card_json(c: Card) -> Dict[str, Any]:
     return {"rank": c.name, "suit": c.suit, "value": c.value, "red": c.suit in ("♥", "♦")}
 
 
+class RLSlot:
+    """One loaded RL checkpoint (DQN or PPO) as offered to the UI."""
+
+    def __init__(self, key: str, checkpoint: str, agent=None, error: Optional[str] = None):
+        self.key = key
+        self.checkpoint = checkpoint
+        self.agent = agent
+        self.error = error
+        self.usable = agent is not None and error is None
+
+    @property
+    def kind(self) -> Optional[str]:
+        return getattr(self.agent, "name", None) if self.agent is not None else None
+
+    @property
+    def score_kind(self) -> Optional[str]:
+        return getattr(self.agent, "score_kind", None) if self.agent is not None else None
+
+    def to_json(self) -> Dict[str, Any]:
+        return {"key": self.key, "kind": self.kind, "score_kind": self.score_kind, "checkpoint": self.checkpoint,
+                "usable": self.usable, "error": self.error}
+
+
 class GameSession:
     def __init__(self, rules: Optional[Rules] = None, bet_sizes: Sequence[float] = (1, 2, 4, 8),
-                 bankroll: float = 100.0, seed: Optional[int] = None, checkpoint: Optional[str] = None):
+                 bankroll: float = 100.0, seed: Optional[int] = None,
+                 checkpoint: Optional[Union[str, Sequence[str]]] = None):
         self.lock = threading.Lock()
-        self.checkpoint = checkpoint
-        self.rl = None            # loaded RL agent (DQNAgent or PPOAgent)
-        self.rl_error = None
-        if checkpoint and os.path.exists(checkpoint):
+        paths = [checkpoint] if isinstance(checkpoint, str) else list(checkpoint or [])
+        self.checkpoint = paths[0] if paths else None          # kept for backwards compatibility
+        self.rl_slots: List[RLSlot] = []
+        for path in paths:
+            if not path or not os.path.exists(path):
+                continue
             try:
                 from ..agents import load_rl_agent
-                self.rl = load_rl_agent(checkpoint)
+                agent = load_rl_agent(path)
+                key = agent.name
+                if any(sl.key == key for sl in self.rl_slots):
+                    key = f"{key}{sum(1 for sl in self.rl_slots if sl.kind == agent.name) + 1}"
+                self.rl_slots.append(RLSlot(key, path, agent))
             except Exception as e:  # pragma: no cover - depends on local files
-                self.rl_error = str(e)
+                self.rl_slots.append(RLSlot(os.path.basename(path), path, None, str(e)))
         self.new_game(rules, bet_sizes, bankroll, seed)
+
+    # ---- helpers over the RL slots
+    @property
+    def usable_slots(self) -> List["RLSlot"]:
+        return [sl for sl in self.rl_slots if sl.usable]
+
+    def slot(self, name: str) -> "RLSlot":
+        """Resolve 'rl' (first usable), 'dqn' / 'ppo' (by kind or key) to a usable slot, or raise."""
+        cands = self.usable_slots
+        if name == "rl":
+            if cands:
+                return cands[0]
+        else:
+            for sl in cands:
+                if sl.key == name or sl.kind == name:
+                    return sl
+        errors = [sl.error for sl in self.rl_slots if sl.error]
+        raise ValueError(errors[0] if errors else "no RL checkpoint loaded")
+
+    # backwards-compatible views used by older code paths / tests
+    @property
+    def rl(self):
+        return self.usable_slots[0].agent if self.usable_slots else None
+
+    @property
+    def rl_usable(self) -> bool:
+        return bool(self.usable_slots)
+
+    @property
+    def rl_error(self) -> Optional[str]:
+        errs = [sl.error for sl in self.rl_slots if sl.error]
+        return errs[0] if errs else None
 
     @property
     def rl_kind(self) -> Optional[str]:
-        return getattr(self.rl, "name", None) if self.rl is not None else None
+        return self.usable_slots[0].kind if self.usable_slots else None
 
     # ------------------------------------------------------------------ lifecycle
     def new_game(self, rules: Optional[Rules], bet_sizes: Sequence[float], bankroll: float,
@@ -54,14 +116,16 @@ class GameSession:
         self.round_over = False
         self.basic = BasicStrategyAgent(self.rules, count_bets=False)
         self.hilo = BasicStrategyAgent(self.rules, count_bets=True)
-        if self.rl is not None and self.rl.n_actions != self.env.action_space.n:
-            self.rl_error = (f"checkpoint expects {self.rl.n_actions - N_PLAY_ACTIONS} bet sizes, "
-                             f"this table has {len(self.env.bet_sizes)}")
-            self.rl_usable = False
-        else:
-            self.rl_usable = self.rl is not None
-            if self.rl_usable:
-                self.rl_error = None
+        for sl in self.rl_slots:
+            if sl.agent is None:
+                continue
+            if sl.agent.n_actions != self.env.action_space.n:
+                sl.error = (f"checkpoint expects {sl.agent.n_actions - N_PLAY_ACTIONS} bet sizes, "
+                            f"this table has {len(self.env.bet_sizes)}")
+                sl.usable = False
+            else:
+                sl.error = None
+                sl.usable = True
         self.obs, self.info = self.env.reset()
         return self.state()
 
@@ -127,11 +191,7 @@ class GameSession:
             return self.basic
         if name == "hilo":
             return self.hilo
-        if name in RL_NAMES:
-            if not self.rl_usable:
-                raise ValueError(self.rl_error or "no RL checkpoint loaded")
-            return self.rl
-        raise ValueError(f"unknown agent {name}")
+        return self.slot(name).agent
 
     # ------------------------------------------------------------------ advice
     def advice(self) -> Dict[str, Any]:
@@ -148,31 +208,35 @@ class GameSession:
             bs = basic_strategy(info["player_total"], info["is_soft"], info["is_pair"], info["dealer_upcard"],
                                 legal, self.rules)
             out["basic"] = ACTION_NAMES[bs]
-        if self.rl_usable:
-            mask = info["action_mask"]
-            kind = getattr(self.rl, "score_kind", "q")
-            scores = self.rl.action_scores(self.obs, mask)
+        mask = info["action_mask"]
+        rl: Dict[str, Any] = {}
+        for sl in self.usable_slots:
+            kind = sl.score_kind or "q"
+            scores = sl.agent.action_scores(self.obs, mask)
             if kind == "q":
                 scores = scores * self.env.max_bet   # back to bet units
             entries = []
             for i in np.flatnonzero(mask):
                 entries.append({"action": self.env.action_name(int(i)), "id": int(i), "score": float(scores[i])})
             best = max(entries, key=lambda e: e["score"]) if entries else None
-            out["rl"] = {"kind": kind, "agent": self.rl_kind, "best": best["action"] if best else None,
-                         "best_id": best["id"] if best else None, "scores": entries}
+            rl[sl.key] = {"kind": kind, "agent": sl.kind, "best": best["action"] if best else None,
+                          "best_id": best["id"] if best else None, "scores": entries}
+        out["rl_agents"] = rl
+        if rl:  # backwards-compatible single entry (first agent)
+            out["rl"] = next(iter(rl.values()))
         return out
 
     # ------------------------------------------------------------------ strategy report
     def strategy_report_html(self, agent: str = "rl", true_count: float = 0.0) -> str:
         from ..cli.strategy import build_report, render_html
-        if agent not in ("basic", "hilo") + RL_NAMES:
-            raise ValueError(f"unknown agent {agent}")
-        if agent in RL_NAMES and not self.rl_usable:
-            raise ValueError(self.rl_error or "no RL checkpoint loaded")
-        a = self.rl if agent in RL_NAMES else (self.hilo if agent == "hilo" else self.basic)
         shoe = self.env.game.shoe
-        rep = build_report("rl" if agent in RL_NAMES else agent, a, self.env, true_count,
-                           shoe.cards_remaining / shoe.total_cards, self.checkpoint if agent in RL_NAMES else None)
+        decks_frac = shoe.cards_remaining / shoe.total_cards
+        if agent in ("basic", "hilo"):
+            a = self.hilo if agent == "hilo" else self.basic
+            rep = build_report(agent, a, self.env, true_count, decks_frac, None)
+        else:
+            sl = self.slot(agent)
+            rep = build_report("rl", sl.agent, self.env, true_count, decks_frac, sl.checkpoint)
         return render_html(rep)
 
     # ------------------------------------------------------------------ state
@@ -247,9 +311,10 @@ class GameSession:
                 "penetration": shoe.penetration,
                 "num_shuffles": shoe.num_shuffles,
             },
-            "agents": ["basic", "hilo"] + (["rl"] if self.rl_usable else []),
-            "rl": {"loaded": self.rl_usable, "checkpoint": self.checkpoint, "kind": self.rl_kind,
-                   "score_kind": getattr(self.rl, "score_kind", None) if self.rl_usable else None,
+            "agents": ["basic", "hilo"] + [sl.key for sl in self.usable_slots],
+            "rl_agents": [sl.to_json() for sl in self.rl_slots],
+            "rl": {"loaded": self.rl_usable, "checkpoint": self.usable_slots[0].checkpoint if self.rl_usable else self.checkpoint,
+                   "kind": self.rl_kind, "score_kind": self.usable_slots[0].score_kind if self.rl_usable else None,
                    "error": self.rl_error},
         }
         if self.round_over:

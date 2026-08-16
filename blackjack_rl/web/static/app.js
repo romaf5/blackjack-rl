@@ -173,8 +173,7 @@ function render() {
       btn.onclick = () => userBet(i);
       chips.appendChild(btn);
     });
-    $("#bet-hint").textContent = (showAdvice && advice && advice.hilo_bet != null)
-      ? `Hi-Lo suggests ${fmt(advice.hilo_bet)}` + (advice.rl && advice.rl.best ? ` · ${(advice.rl.agent || "RL").toUpperCase()} would ${advice.rl.best}` : "") : "";
+    $("#bet-hint").textContent = (showAdvice && advice && advice.hilo_bet != null) ? `Hi-Lo suggests ${fmt(advice.hilo_bet)}` : "";
   } else {
     betPrompt.classList.add("hidden");
   }
@@ -223,45 +222,67 @@ function render() {
   $("#cut-mark").style.left = (100 * c.cut_card / c.total_cards).toFixed(1) + "%";
   $("#shoe-text").textContent = `${c.cards_dealt} / ${c.total_cards} cards dealt · cut card at ${Math.round(100 * c.penetration)}%`;
 
+  // agent select (basic, hilo + one entry per loaded RL checkpoint)
+  const rlAgents = (s.rl_agents || []).filter((a) => a.usable);
+  const sel = $("#agent-select");
+  const keys = ["basic", "hilo", ...rlAgents.map((a) => a.key)].join(",");
+  if (sel.dataset.keys !== keys) {
+    const prev = sel.value;
+    sel.innerHTML = "";
+    const add = (v, label) => { const o = document.createElement("option"); o.value = v; o.textContent = label; sel.appendChild(o); };
+    add("basic", "Basic strategy (flat bet)");
+    add("hilo", "Basic + Hi-Lo betting");
+    rlAgents.forEach((a) => add(a.key, `${a.kind.toUpperCase()} agent${a.key !== a.kind ? " (" + a.key + ")" : ""}`));
+    sel.dataset.keys = keys;
+    sel.value = [...sel.options].some((o) => o.value === prev) ? prev : "basic";
+  }
+  const shown = rlAgents.find((a) => a.key === sel.value) || rlAgents[0] || null;   // whose scores to plot
+
+  // bet-phase hint line (RL suggestion for the shown agent)
+  if (s.phase === "bet" && showAdvice && advice && shown && advice.rl_agents && advice.rl_agents[shown.key]) {
+    const b = advice.rl_agents[shown.key].best;
+    if (b) $("#bet-hint").textContent += ` · ${shown.kind.toUpperCase()} would ${b}`;
+  }
+
   // advisor
-  const advBasic = $("#adv-basic"), advHilo = $("#adv-hilo"), advRl = $("#adv-rl"), qbars = $("#qbars");
-  const rlName = s.rl.kind ? s.rl.kind.toUpperCase() : "RL";
-  $("#adv-rl-label").textContent = s.rl.loaded ? `${rlName} agent` : "RL agent";
+  const advBasic = $("#adv-basic"), advHilo = $("#adv-hilo"), rows = $("#adv-rl-rows"), qbars = $("#qbars");
   qbars.innerHTML = "";
+  rows.innerHTML = "";
+  $("#qbars-title").textContent = "";
   if (advice && s.phase !== "done") {
     advBasic.textContent = advice.basic ? advice.basic.toUpperCase() : "–";
     advHilo.textContent = advice.hilo_bet != null ? `bet ${fmt(advice.hilo_bet)}` : "–";
-    if (advice.rl) {
-      advRl.textContent = advice.rl.best ? advice.rl.best.toUpperCase() : "–";
-      const qs = advice.rl.scores;
-      const isProb = advice.rl.kind === "prob";
-      const maxAbs = Math.max(0.05, ...qs.map((e) => Math.abs(e.score)));
-      qs.forEach((e) => {
-        const row = document.createElement("div");
-        row.className = "qbar" + (e.action === advice.rl.best ? " best" : "");
-        let left, w, cls = "";
-        if (isProb) { left = 0; w = 100 * e.score; }
-        else { w = 50 * Math.abs(e.score) / maxAbs; left = e.score >= 0 ? 50 : 50 - w; cls = e.score < 0 ? "neg" : ""; }
-        const val = isProb ? (100 * e.score).toFixed(1) + "%" : fmt(e.score, true);
-        row.innerHTML = `<span>${e.action}</span><div class="track"><i class="${cls}" style="left:${left}%;width:${w}%"></i></div><span class="val">${val}</span>`;
-        qbars.appendChild(row);
-      });
-    } else {
-      advRl.textContent = "–";
-    }
   } else {
-    advBasic.textContent = advHilo.textContent = advRl.textContent = "–";
+    advBasic.textContent = advHilo.textContent = "–";
   }
-  $("#dqn-note").textContent = s.rl.loaded
-    ? `${s.rl.score_kind === "prob" ? "policy probabilities" : "Q-values in bet units"} · ${s.rl.checkpoint}`
-    : (s.rl.error ? `RL agent not available: ${s.rl.error}` : "No checkpoint found — run blackjack-train-ppo (or blackjack-train), then restart with --checkpoint");
-
-  // agent select
-  const sel = $("#agent-select");
-  const rlOpt = sel.querySelector('option[value="rl"]');
-  rlOpt.disabled = !s.rl.loaded;
-  rlOpt.textContent = s.rl.loaded ? `${rlName} agent` : "RL agent (no checkpoint)";
-  if (rlOpt.disabled && sel.value === "rl") sel.value = "basic";
+  rlAgents.forEach((a) => {
+    const adv = advice && s.phase !== "done" && advice.rl_agents ? advice.rl_agents[a.key] : null;
+    const row = document.createElement("div");
+    row.className = "kv";
+    row.innerHTML = `<span>${a.kind.toUpperCase()} agent${a.key !== a.kind ? " (" + a.key + ")" : ""}</span><b>${adv && adv.best ? adv.best.toUpperCase() : "–"}</b>`;
+    rows.appendChild(row);
+  });
+  if (shown && advice && s.phase !== "done" && advice.rl_agents && advice.rl_agents[shown.key]) {
+    const adv = advice.rl_agents[shown.key];
+    const isProb = adv.kind === "prob";
+    $("#qbars-title").textContent = `${shown.kind.toUpperCase()} ${isProb ? "policy probabilities" : "Q-values (bet units)"}:`;
+    const maxAbs = Math.max(0.05, ...adv.scores.map((e) => Math.abs(e.score)));
+    adv.scores.forEach((e) => {
+      const row = document.createElement("div");
+      row.className = "qbar" + (e.action === adv.best ? " best" : "");
+      let left, w, cls = "";
+      if (isProb) { left = 0; w = 100 * e.score; }
+      else { w = 50 * Math.abs(e.score) / maxAbs; left = e.score >= 0 ? 50 : 50 - w; cls = e.score < 0 ? "neg" : ""; }
+      const val = isProb ? (100 * e.score).toFixed(1) + "%" : fmt(e.score, true);
+      row.innerHTML = `<span>${e.action}</span><div class="track"><i class="${cls}" style="left:${left}%;width:${w}%"></i></div><span class="val">${val}</span>`;
+      qbars.appendChild(row);
+    });
+  }
+  const broken = (s.rl_agents || []).filter((a) => !a.usable);
+  $("#dqn-note").textContent = rlAgents.length
+    ? rlAgents.map((a) => `${a.kind.toUpperCase()}: ${a.checkpoint}`).join(" · ") + (broken.length ? ` · unavailable: ${broken.map((a) => a.error).join("; ")}` : "")
+    : (broken.length ? `RL agents not available: ${broken.map((a) => a.error).join("; ")}`
+                     : "No checkpoint found — run blackjack-train-ppo (or blackjack-train), then restart blackjack-web");
 
   // session
   $("#wlp").textContent = `${s.wins} / ${s.losses} / ${s.pushes}`;
@@ -349,6 +370,7 @@ function stopAuto() {
 $$("#actions .act").forEach((b) => (b.onclick = () => userAct(b.dataset.action)));
 $("#btn-next").onclick = nextRound;
 $("#btn-auto").onclick = () => (auto.on ? stopAuto() : startAuto());
+$("#agent-select").onchange = () => render();
 $("#btn-step").onclick = async () => { stopAuto(); try { await agentStep(); } catch (e) { toast(e.message); } };
 $("#toggle-count").onchange = (e) => { showCount = e.target.checked; $("#count-body").classList.toggle("hidden", !showCount); };
 $("#toggle-advice").onchange = (e) => { showAdvice = e.target.checked; $("#advice-body").classList.toggle("hidden", !showAdvice); render(); };
