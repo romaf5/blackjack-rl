@@ -223,12 +223,14 @@ GPU to help, `--device mps` is slower):
 | basic strategy + Hi-Lo (benchmark) | – | ≈ −0.3 % … +0.3 % | 100 % | 1 → 8 |
 | DQN, 400k rounds, batch 256 | 10 min | −4.6 % | 63 / 54 / 55 % | none |
 | DQN, 3M rounds, batch 1024, `--train-every 8` | 36 min | −1.2 % | 79 / 65 / 62 % | partial: ~2 units at TC ≤ −4, 4 units around 0, 8 units at TC ≥ +6 |
-| PPO, 50M rounds, 2048 envs × 8 workers, MPS | PPO_TIME | PPO_EV | PPO_AGREE | PPO_SPREAD |
+| PPO, 50M rounds, 2048 envs × 8 workers, MPS | 20 min | **−1.2 %** | **89 / 96 / 79 %** | none yet (flat 1 unit; policy entropy collapsed early) |
 
-So the agent is clearly learning (it hits/stands correctly on almost every hard total and has started
-to size bets with the count) but is still short of basic strategy on doubles, soft hands and pairs —
-the rarest states with the smallest EV differences. More rounds, `--resume` from the last checkpoint,
-and a lower final learning rate are the obvious next levers.
+Both agents are clearly learning. PPO plays much closer to basic strategy (it hits/stands/doubles
+correctly almost everywhere and only misses some pairs and never surrenders) but still bets flat;
+the DQN's play is rougher yet it started to size bets with the count. Neither beats the house yet:
+the remaining gaps are the rarest states with the smallest EV differences, plus the bet spread, which
+only pays once the play is right. Obvious next levers: more rounds / `--resume`, a larger entropy
+coefficient for PPO so exploration doesn't die out early, and lower final learning rates.
 
 ## Ideas / next steps
 
