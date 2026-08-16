@@ -231,10 +231,3 @@ the DQN's play is rougher yet it started to size bets with the count. Neither be
 the remaining gaps are the rarest states with the smallest EV differences, plus the bet spread, which
 only pays once the play is right. Obvious next levers: more rounds / `--resume`, a larger entropy
 coefficient for PPO so exploration doesn't die out early, and lower final learning rates.
-
-## Ideas / next steps
-
-* Insurance as an action (becomes +EV at true count ≥ +3), bankroll in the observation, table limits
-* PPO / policy-gradient agent, vectorised envs for faster training
-* Multi-player table (other players' cards feed the count)
-* A GUI / web front-end on top of the same env
