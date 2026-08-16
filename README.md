@@ -212,7 +212,16 @@ Reference points (6D H17 DAS LS, bets 1/2/4/8, Apple M2 Max):
 
 | run | wall time | EV / unit wagered | agreement with basic strategy (hard / soft / pairs) | bet spread |
 |---|---|---|---|---|
-| basic strategy + Hi-Lo (benchmark) | – | ≈ −0.3 % … +0.3 % | 100 % | 1 → 8 |
-| PPO, 50M rounds, 2048 envs × 8 workers, MPS | PPO_TIME | PPO_EV | PPO_AGREE | PPO_SPREAD |
+| basic strategy, flat bet | – | −0.62 % | 100 % | flat |
+| basic strategy + Hi-Lo 1-2-4-8 (benchmark) | – | ≈ −0.3 % … +0.3 % | 100 % | 1 → 8 from TC +2 |
+| PPO, 50M rounds, `--ent-coef 0.005` | 28 min | −1.8 % | 85 / 93 / 54 % | none (flat 1; rarely doubles/splits, never surrenders) |
+| PPO, 50M rounds, `--ent-coef 0.02` (default) | 28 min | **−1.05 %** (last 200k-round eval −0.5 %) | **90 / 90 / 79 %** | **1 → 2 → 4 from TC +3/+4**, EV/round positive at TC ≥ +3 |
 
-PPO_NOTES
+The entropy coefficient turned out to be the important knob: with a small bonus the policy goes
+deterministic within a few million rounds and never explores doubles, splits, surrender or bigger
+bets; with `0.02 → 0.002` it keeps sampling those, matches basic strategy on 90 % of hard/soft cells,
+surrenders like basic strategy does, and — the interesting part — learns on its own to raise its bet
+when the true count is high, i.e. it discovers card counting from the count feature. It does not beat
+the house yet: the remaining gaps are pairs (79 %) and the size of the spread (it stops at 4 units;
+Hi-Lo goes to 8), both of which are the rarest situations in the data. `--resume checkpoints/ppo.pt
+--total-rounds 100000000` is the cheap next experiment.

@@ -157,8 +157,8 @@ class PPOConfig:
     minibatches: int = 8
     clip_coef: float = 0.2
     clip_vloss: bool = True
-    ent_coef: float = 0.005
-    ent_coef_end: float = 0.0        # linear anneal
+    ent_coef: float = 0.02           # keep exploring: with 0.005 the policy went deterministic before learning doubles/splits/bets
+    ent_coef_end: float = 0.002      # linear anneal
     vf_coef: float = 0.5
     max_grad_norm: float = 0.5
     norm_adv: bool = True
