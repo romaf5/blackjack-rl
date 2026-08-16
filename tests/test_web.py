@@ -13,7 +13,7 @@ from blackjack_rl.web.session import GameSession
 def test_session_round_trip():
     s = GameSession(rules=Rules(), bet_sizes=(1, 2, 4, 8), bankroll=50, seed=1, checkpoint=None)
     st = s.state()
-    assert st["phase"] == "bet" and st["agents"] == ["basic", "hilo"] and st["rl"]["loaded"] is False
+    assert st["phase"] == "bet" and st["agents"] == ["basic", "hilo"] and st["rl_agents"] == []
     with pytest.raises(ValueError):
         s.act("hit")
     st = s.bet(1)
@@ -41,7 +41,7 @@ def test_agent_step_plays_whole_rounds():
     if s.round_over:
         s.next_round()
     with pytest.raises(ValueError):
-        s.agent_step("rl")           # no checkpoint loaded
+        s.agent_step("ppo")          # no checkpoint loaded
 
 
 def test_rules_from_json():
@@ -97,4 +97,4 @@ def test_strategy_report_html_from_session():
     page = s.strategy_report_html("hilo", 2.0)
     assert page.startswith("<!doctype html>") and "Hard totals" in page and "Bet size by true count" in page
     with pytest.raises(ValueError):
-        s.strategy_report_html("rl")
+        s.strategy_report_html("ppo")

@@ -61,17 +61,15 @@ def make_agent(name: str, env: BlackjackEnv, checkpoint: str = None, seed=None):
     if name == "hilo":
         from ..agents import BasicStrategyAgent
         return BasicStrategyAgent(env.rules, count_bets=True)
-    if name in ("dqn", "ppo", "rl"):
+    if name == "ppo":
         if not checkpoint:
-            raise SystemExit(f"--checkpoint is required for the {name} agent")
+            raise SystemExit("--checkpoint is required for the ppo agent")
         from ..agents import load_rl_agent
         agent = load_rl_agent(checkpoint)
-        if name != "rl" and agent.name != name:
-            raise SystemExit(f"{checkpoint} is a {agent.name} checkpoint, not {name}")
         if agent.n_actions != env.action_space.n:
             raise SystemExit(f"checkpoint was trained with {agent.n_actions - 5} bet sizes, env has {len(env.bet_sizes)}")
         return agent
     raise SystemExit(f"unknown agent {name!r}")
 
 
-RL_AGENT_CHOICES = ["random", "basic", "hilo", "dqn", "ppo", "rl"]
+AGENT_CHOICES = ["random", "basic", "hilo", "ppo"]

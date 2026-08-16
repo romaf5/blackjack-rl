@@ -165,17 +165,17 @@ def main(argv=None) -> None:
     p.add_argument("--bankroll", type=float, default=100.0)
     p.add_argument("--seed", type=int, default=None)
     p.add_argument("--checkpoint", type=str, action="append", default=None,
-                   help="DQN/PPO checkpoint for the advisor / autoplay; repeat to load several "
-                        "(default: checkpoints/ppo.pt and checkpoints/dqn.pt if they exist)")
+                   help="PPO checkpoint for the advisor / autoplay; repeat to load and compare several "
+                        "(default: checkpoints/ppo.pt if it exists)")
     p.add_argument("--no-browser", action="store_true")
     a = p.parse_args(argv)
-    checkpoints = a.checkpoint or [c for c in ("checkpoints/ppo.pt", "checkpoints/dqn.pt") if os.path.exists(c)]
+    checkpoints = a.checkpoint or [c for c in ("checkpoints/ppo.pt",) if os.path.exists(c)]
     session = GameSession(rules=rules_from_args(a), bet_sizes=bets_from_args(a), bankroll=a.bankroll,
                           seed=a.seed, checkpoint=checkpoints)
     for sl in session.rl_slots:
         print(f"RL agent '{sl.key}' ({sl.kind}) from {sl.checkpoint}" if sl.usable else f"(could not use {sl.checkpoint}: {sl.error})")
     if not session.rl_slots:
-        print("(no RL checkpoints found — train one with blackjack-train-ppo / blackjack-train)")
+        print("(no PPO checkpoint found — train one with blackjack-train-ppo)")
     serve(session, a.host, a.port, open_browser=not a.no_browser)
 
 

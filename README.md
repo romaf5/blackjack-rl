@@ -1,7 +1,7 @@
 # blackjack-rl
 
 A full-rules blackjack engine, a Gymnasium environment with **bet sizing and card counting**,
-and RL agents that learn to play (and bet) — plus a browser (and terminal) game so you can play
+and a PPO agent that learns to play (and bet) — plus a browser (and terminal) game so you can play
 the exact same environment yourself.
 
 ![Blackjack RL web UI — split hand mid-decision with the advisor panel](docs/screenshot-play.png)
@@ -18,8 +18,8 @@ blackjack_rl/
 ├── engine/       pure-Python game engine (no RL deps): shoe + Hi-Lo count, hands, rules, round state machine
 ├── env/          Gymnasium env  "BlackjackFull-v0"  (bet phase → play phase, action mask, persistent shoe)
 │                 + BlackjackVectorEnv: N envs stepped as a batch, auto-reset, subprocess workers
-├── agents/       random, basic strategy (+ Hi-Lo bet spread), masked Double-DQN, masked PPO (PyTorch)
-├── cli/          blackjack-play / blackjack-train / blackjack-train-ppo / blackjack-eval / blackjack-strategy
+├── agents/       random, basic strategy (+ Hi-Lo bet spread), masked PPO (PyTorch)
+├── cli/          blackjack-play / blackjack-train-ppo / blackjack-eval / blackjack-strategy
 ├── web/          blackjack-web: browser UI (stdlib HTTP server + vanilla JS) on top of the env
 └── evaluation.py EV / variance / win-rate / bet-by-count statistics
 tests/            pytest suite for the engine, env and baselines
@@ -38,16 +38,16 @@ pytest
 ### In the browser (recommended)
 
 ```bash
-blackjack-web                              # opens http://127.0.0.1:8000; loads checkpoints/ppo.pt + checkpoints/dqn.pt if present
+blackjack-web                              # opens http://127.0.0.1:8000; loads checkpoints/ppo.pt if present
 blackjack-web --checkpoint checkpoints/ppo.pt --checkpoint runs/other.pt --s17 --bets 5,10,25 --port 9000
 ```
 
 A casino-style table served straight from the RL environment: click chips to bet, keyboard
 shortcuts (`1-9` bet, `H/S/D/P/R` play, `Enter` next round), split hands, hole-card reveal,
 running/true count and shoe penetration, and an **advisor panel** showing what basic strategy,
-Hi-Lo betting and every loaded RL agent (DQN and/or PPO) would do — with the DQN's Q-values or the
-PPO policy's probabilities per action. **Autoplay** lets any agent (basic / Hi-Lo / DQN / PPO) play
-the table while you watch, 📊 Strategy opens the selected agent's strategy report, and ⚙ Table
+Hi-Lo betting and the trained PPO agent would do — with the policy's probability for each action
+(pass `--checkpoint` several times to compare runs side by side). **Autoplay** lets any agent
+(basic / Hi-Lo / PPO) play the table while you watch, 📊 Strategy opens the selected agent's strategy report, and ⚙ Table
 starts a new table with different rules, bet sizes and bankroll. Zero front-end dependencies — a
 small stdlib HTTP server (`blackjack_rl/web`) + vanilla HTML/CSS/JS.
 
@@ -185,53 +185,34 @@ enough that the neural network, not the environment, is the bottleneck.
 ```bash
 blackjack-train-ppo --total-rounds 50000000 --num-envs 2048 --workers 8 --device auto   # auto = mps > cuda > cpu
 blackjack-eval --agent ppo --checkpoint checkpoints/ppo.pt --rounds 300000
-blackjack-strategy --agent ppo --checkpoint checkpoints/ppo.pt --open
-blackjack-web --checkpoint checkpoints/ppo.pt          # advisor shows the policy's probabilities
+blackjack-strategy --agent ppo --checkpoint checkpoints/ppo.pt --open       # learned tables vs basic strategy, bet spread
+blackjack-web --checkpoint checkpoints/ppo.pt                              # advisor shows the policy's probabilities
 ```
 
-`agents/ppo.py` is a masked actor-critic PPO (separate policy/value MLPs, GAE, clipped objective,
-entropy bonus with linear anneal, Gumbel-max sampling so it runs on any device). Rollouts come from
-the vector env, so every forward pass is a batch of thousands of observations and the update works on
-65k transitions at a time — that is where the GPU helps: on the M2 Max the same run does **~40k rounds/s
-on MPS vs ~32k on CPU** with 1024 envs (≈ 62k rounds/s on MPS with 2048 envs). For the DQN's
-one-observation-at-a-time loop the GPU is a loss (dispatch latency), so `blackjack-train` stays on CPU.
+`agents/ppo.py` is a masked actor-critic PPO: separate policy/value MLPs, GAE, clipped objective,
+entropy bonus with linear anneal, Gumbel-max sampling so it runs on any device. Illegal actions are
+masked out of the logits, so the agent never picks one and never gets gradient towards one. Rollouts
+come from the vector env, so every forward pass is a batch of thousands of observations and each
+update works on 65k transitions — that is where the GPU helps: on the M2 Max the same run does
+**~40k rounds/s on MPS vs ~32k on CPU** with 1024 envs (≈ 60k rounds/s on MPS with 2048 envs).
+Rewards are scaled by `1/max_bet`; a round's outcome is very noisy compared with the EV differences
+between actions (often < 1 % of the bet), so the fine details of basic strategy — and the bet spread,
+which only pays once the play is right — take tens of millions of rounds. `--total-rounds`,
+`--ent-coef`, `--lr`/`--lr-end` and `--resume` are the knobs; `--bets 1` trains a flat-betting player.
 
-## Train the DQN
-
-```bash
-blackjack-train --rounds 400000 --out checkpoints/dqn.pt
-blackjack-eval --agent dqn --checkpoint checkpoints/dqn.pt --rounds 200000
-blackjack-strategy --agent dqn --checkpoint checkpoints/dqn.pt     # learned tables vs basic strategy + bet spread
-blackjack-strategy --agent dqn --checkpoint checkpoints/dqn.pt --html reports/dqn.html --open
-```
-
-`--html PATH` (or `--open`) writes a self-contained, light/dark-aware **HTML report**: colour-coded
-hard/soft/pairs charts with every disagreement vs basic strategy outlined (hover a cell for the
-Q-values), agreement tiles, the bet spread by true count against the Hi-Lo reference, and the
-Q-value table per bet size. The same report is one click away in the browser game (📊 Strategy).
+`--html PATH` (or `--open`) on `blackjack-strategy` writes a self-contained, light/dark-aware **HTML
+report**: colour-coded hard/soft/pairs charts with every disagreement vs basic strategy outlined
+(hover a cell for the policy's probabilities), agreement tiles, the bet spread by true count against the
+Hi-Lo reference, and the probability table per bet size. The same report is one click away in the
+browser game (📊 Strategy).
 
 ![Strategy report](docs/screenshot-strategy.png)
-
-The agent is a masked **Double DQN** (`agents/dqn.py`): one MLP outputs Q-values for all 5 play
-actions + all bet sizes; the mask picks which are valid in the current phase. Rewards are scaled by
-`1/max_bet` for training. Because a round's outcome is very noisy compared with the EV differences
-between actions (often < 1 % of the bet), learning the fine details of basic strategy — and especially
-the bet spread — takes millions of rounds; `--rounds`, `--lr`, `--batch-size`, `--train-every`,
-`--eps-decay-frac` and `--resume` are the knobs. `--bets 1` trains a flat-betting player if you only
-care about the playing decisions.
 
 Reference points (6D H17 DAS LS, bets 1/2/4/8, Apple M2 Max):
 
 | run | wall time | EV / unit wagered | agreement with basic strategy (hard / soft / pairs) | bet spread |
 |---|---|---|---|---|
 | basic strategy + Hi-Lo (benchmark) | – | ≈ −0.3 % … +0.3 % | 100 % | 1 → 8 |
-| DQN, 400k rounds, batch 256 | 10 min | −4.6 % | 63 / 54 / 55 % | none |
-| DQN, 3M rounds, batch 1024, `--train-every 8` | 36 min | −1.2 % | 79 / 65 / 62 % | partial: ~2 units at TC ≤ −4, 4 units around 0, 8 units at TC ≥ +6 |
-| PPO, 50M rounds, 2048 envs × 8 workers, MPS | 20 min | **−1.2 %** | **89 / 96 / 79 %** | none yet (flat 1 unit; policy entropy collapsed early) |
+| PPO, 50M rounds, 2048 envs × 8 workers, MPS | PPO_TIME | PPO_EV | PPO_AGREE | PPO_SPREAD |
 
-Both agents are clearly learning. PPO plays much closer to basic strategy (it hits/stands/doubles
-correctly almost everywhere and only misses some pairs and never surrenders) but still bets flat;
-the DQN's play is rougher yet it started to size bets with the count. Neither beats the house yet:
-the remaining gaps are the rarest states with the smallest EV differences, plus the bet spread, which
-only pays once the play is right. Obvious next levers: more rounds / `--resume`, a larger entropy
-coefficient for PPO so exploration doesn't die out early, and lower final learning rates.
+PPO_NOTES

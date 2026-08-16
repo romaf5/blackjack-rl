@@ -44,19 +44,20 @@ def test_ppo_smoke_train_and_roundtrip(tmp_path):
     path = tmp_path / "ppo.pt"
     agent.save(str(path), extra={"note": "test"})
     loaded = load_rl_agent(str(path))
-    assert isinstance(loaded, PPOAgent) and loaded.name == "ppo" and loaded.score_kind == "prob"
+    assert isinstance(loaded, PPOAgent) and loaded.name == "ppo"
     obs, info = env.reset(seed=3)
     p = loaded.action_probs(obs, info["action_mask"])
     assert p.shape == (9,) and abs(p.sum() - 1) < 1e-5 and (p[:5] == 0).all()
     assert loaded.greedy_action(obs, info["action_mask"]) == agent.greedy_action(obs, info["action_mask"])
     # strategy report + web session accept the PPO checkpoint
-    rep = build_report("rl", loaded, env, 0.0, 0.6, str(path))
-    assert rep.agent_name == "ppo" and rep.score_kind == "prob" and rep.bet_q is not None
+    rep = build_report("ppo", loaded, env, 0.0, 0.6, str(path))
+    assert rep.agent_name == "ppo" and rep.bet_q is not None
     page = render_html(rep)
     assert "PPO agent" in page and "Policy probability" in page
     s = GameSession(bankroll=100, seed=4, checkpoint=str(path))
-    assert s.state()["rl"] == {"loaded": True, "checkpoint": str(path), "kind": "ppo", "score_kind": "prob", "error": None}
+    assert s.state()["rl_agents"] == [{"key": "ppo", "kind": "ppo", "checkpoint": str(path), "usable": True, "error": None}]
+    assert s.state()["agents"] == ["basic", "hilo", "ppo"]
     adv = s.advice()
-    assert adv["rl"]["kind"] == "prob" and abs(sum(e["score"] for e in adv["rl"]["scores"]) - 1) < 1e-5
-    st2 = s.agent_step("rl")
+    assert abs(sum(e["prob"] for e in adv["rl_agents"]["ppo"]["probs"]) - 1) < 1e-5
+    st2 = s.agent_step("ppo")
     assert st2["agent_action"].startswith("bet")

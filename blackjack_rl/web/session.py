@@ -13,7 +13,7 @@ from ..env import BlackjackEnv, Phase
 from ..env.blackjack_env import N_PLAY_ACTIONS
 
 ACTION_BY_NAME = {name: a for a, name in ACTION_NAMES.items()}
-RL_NAMES = ("rl", "dqn", "ppo")
+RL_NAMES = ("rl", "ppo")
 
 
 def card_json(c: Card) -> Dict[str, Any]:
@@ -21,7 +21,7 @@ def card_json(c: Card) -> Dict[str, Any]:
 
 
 class RLSlot:
-    """One loaded RL checkpoint (DQN or PPO) as offered to the UI."""
+    """One loaded PPO checkpoint as offered to the UI (several can be loaded to compare runs)."""
 
     def __init__(self, key: str, checkpoint: str, agent=None, error: Optional[str] = None):
         self.key = key
@@ -34,13 +34,8 @@ class RLSlot:
     def kind(self) -> Optional[str]:
         return getattr(self.agent, "name", None) if self.agent is not None else None
 
-    @property
-    def score_kind(self) -> Optional[str]:
-        return getattr(self.agent, "score_kind", None) if self.agent is not None else None
-
     def to_json(self) -> Dict[str, Any]:
-        return {"key": self.key, "kind": self.kind, "score_kind": self.score_kind, "checkpoint": self.checkpoint,
-                "usable": self.usable, "error": self.error}
+        return {"key": self.key, "kind": self.kind, "checkpoint": self.checkpoint, "usable": self.usable, "error": self.error}
 
 
 class GameSession:
@@ -71,7 +66,7 @@ class GameSession:
         return [sl for sl in self.rl_slots if sl.usable]
 
     def slot(self, name: str) -> "RLSlot":
-        """Resolve 'rl' (first usable), 'dqn' / 'ppo' (by kind or key) to a usable slot, or raise."""
+        """Resolve 'rl' / 'ppo' (first usable) or a slot key ('ppo2', ...) to a usable slot, or raise."""
         cands = self.usable_slots
         if name == "rl":
             if cands:
@@ -211,19 +206,13 @@ class GameSession:
         mask = info["action_mask"]
         rl: Dict[str, Any] = {}
         for sl in self.usable_slots:
-            kind = sl.score_kind or "q"
-            scores = sl.agent.action_scores(self.obs, mask)
-            if kind == "q":
-                scores = scores * self.env.max_bet   # back to bet units
-            entries = []
-            for i in np.flatnonzero(mask):
-                entries.append({"action": self.env.action_name(int(i)), "id": int(i), "score": float(scores[i])})
-            best = max(entries, key=lambda e: e["score"]) if entries else None
-            rl[sl.key] = {"kind": kind, "agent": sl.kind, "best": best["action"] if best else None,
-                          "best_id": best["id"] if best else None, "scores": entries}
+            probs = sl.agent.action_probs(self.obs, mask)
+            entries = [{"action": self.env.action_name(int(i)), "id": int(i), "prob": float(probs[i])}
+                       for i in np.flatnonzero(mask)]
+            best = max(entries, key=lambda e: e["prob"]) if entries else None
+            rl[sl.key] = {"agent": sl.kind, "best": best["action"] if best else None,
+                          "best_id": best["id"] if best else None, "probs": entries}
         out["rl_agents"] = rl
-        if rl:  # backwards-compatible single entry (first agent)
-            out["rl"] = next(iter(rl.values()))
         return out
 
     # ------------------------------------------------------------------ strategy report
@@ -313,9 +302,6 @@ class GameSession:
             },
             "agents": ["basic", "hilo"] + [sl.key for sl in self.usable_slots],
             "rl_agents": [sl.to_json() for sl in self.rl_slots],
-            "rl": {"loaded": self.rl_usable, "checkpoint": self.usable_slots[0].checkpoint if self.rl_usable else self.checkpoint,
-                   "kind": self.rl_kind, "score_kind": self.usable_slots[0].score_kind if self.rl_usable else None,
-                   "error": self.rl_error},
         }
         if self.round_over:
             state["last"] = {

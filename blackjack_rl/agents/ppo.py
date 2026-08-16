@@ -87,7 +87,6 @@ class ActorCritic(nn.Module):
 
 class PPOAgent(Agent):
     name = "ppo"
-    score_kind = "prob"
 
     def __init__(self, obs_dim: int, n_actions: int, hidden: Sequence[int] = (256, 256),
                  device: Optional[str] = "cpu"):
@@ -109,11 +108,6 @@ class PPOAgent(Agent):
         o = torch.as_tensor(np.asarray(obs, dtype=np.float32), device=self.device).unsqueeze(0)
         m = torch.as_tensor(np.asarray(mask).astype(bool), device=self.device).unsqueeze(0)
         return F.softmax(self.net.logits(o, m), dim=-1)[0].cpu().numpy()
-
-    def action_scores(self, obs: np.ndarray, mask: np.ndarray) -> np.ndarray:
-        p = self.action_probs(obs, mask)
-        p[~np.asarray(mask).astype(bool)] = np.nan
-        return p
 
     def greedy_action(self, obs: np.ndarray, mask: np.ndarray) -> int:
         p = self.action_probs(obs, mask)
